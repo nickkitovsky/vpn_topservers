@@ -20,7 +20,7 @@ LOGGING_CONFIG = {
         "file": {
             "class": "logging.FileHandler",
             # TODO: configure path for log file
-            "filename": "../logs/app.log",
+            "filename": "logs/app.log",
             "mode": "a",
             "encoding": "utf-8",
             "level": "INFO",
