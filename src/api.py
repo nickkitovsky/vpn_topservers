@@ -1,17 +1,33 @@
 import base64
 import logging
+import time
 from dataclasses import dataclass
+from ipaddress import ip_address
 from urllib.parse import parse_qs, urlparse
 
 from grpc import Channel, insecure_channel
 from xcapi.xray.app.proxyman.command.command_grpc_pb import HandlerServiceStub
-from xcapi.xray.app.proxyman.command.command_pb import AddOutboundRequest
-from xcapi.xray.app.proxyman.config_pb import MultiplexingConfig, SenderConfig
+from xcapi.xray.app.proxyman.command.command_pb import (
+    AddInboundRequest,
+    AddOutboundRequest,
+)
+from xcapi.xray.app.proxyman.config_pb import (
+    MultiplexingConfig,
+    ReceiverConfig,
+    SenderConfig,
+    SniffingConfig,
+)
+from xcapi.xray.app.router.command.command_grpc_pb import RoutingServiceStub
+from xcapi.xray.app.router.command.command_pb import AddRuleRequest
+from xcapi.xray.app.router.config_pb import Config, RoutingRule
 from xcapi.xray.common.net.address_pb import IPOrDomain
+from xcapi.xray.common.net.network_pb import Network
+from xcapi.xray.common.net.port_pb import PortList, PortRange
 from xcapi.xray.common.protocol.server_spec_pb import ServerEndpoint
 from xcapi.xray.common.protocol.user_pb import User
 from xcapi.xray.common.serial.typed_message_pb import GetMessageType, ToTypedMessage
-from xcapi.xray.core.config_pb import OutboundHandlerConfig
+from xcapi.xray.core.config_pb import InboundHandlerConfig, OutboundHandlerConfig
+from xcapi.xray.proxy.socks.config_pb import AuthType, ServerConfig as SocksServerConfig
 from xcapi.xray.proxy.vless.account_pb import Account as VlessAccount
 from xcapi.xray.proxy.vless.outbound.config_pb import Config as VlessOutboundConfig
 from xcapi.xray.transport.internet.config_pb import StreamConfig, TransportConfig
@@ -39,64 +55,178 @@ class OutboundParams:
     service_name: str = ""
     host: str = ""
     alpn: list | None = None
-
-
-def decode_base64url(b64_str: str) -> bytes:
-    padding = "=" * (-len(b64_str) % 4)
-    return base64.urlsafe_b64decode(b64_str + padding)
+    sid: str = ""  # будет заполнено позже
+    flow: str = ""
 
 
 def parse_url(link: str) -> OutboundParams:
     parsed = urlparse(link)
     query = parse_qs(parsed.query)
     protocol = parsed.scheme
-    user_id = parsed.username
+    user_id = parsed.username or ""
 
-    def get_param(key: str, default: str = "") -> str:
-        return query.get(key, [default])[0]
+    def get_param(key: str) -> str:
+        return query.get(key, [""])[0]
 
-    if (
-        isinstance(parsed.hostname, str)
-        and isinstance(parsed.port, int)
-        and isinstance(user_id, str)
-    ):
-        return OutboundParams(
-            protocol=protocol,
-            address=parsed.hostname,
-            port=parsed.port,
-            user_id=user_id,
-            sni=get_param("sni"),
-            pbk=get_param("pbk"),
-            security=get_param("security", "none"),
-            type=get_param("type", "tcp"),
-            fp=get_param("fp"),
-            path=get_param("path", "/"),
-            service_name=get_param("serviceName"),
-            host=get_param("host"),
-            alpn=query.get("alpn"),
+    if not (parsed.hostname and parsed.port and user_id):
+        msg = f"Error parsing link: {link}"
+        logger.error(msg)
+        raise ValueError(msg)
+
+    # Парсим все базовые поля
+    params = OutboundParams(
+        protocol=protocol,
+        address=parsed.hostname,
+        port=parsed.port,
+        user_id=user_id,
+        sni=get_param("sni"),
+        pbk=get_param("pbk"),
+        security=get_param("security") or "none",
+        type=get_param("type") or "tcp",
+        fp=get_param("fp"),
+        path=get_param("path") or "/",
+        service_name=get_param("serviceName"),
+        host=get_param("host"),
+        alpn=query.get("alpn"),
+    )
+    sid_from_url = get_param("sid")
+    if sid_from_url:
+        params.sid = sid_from_url
+    else:
+        params.sid = ""
+    if flow_from_url := query.get("flow"):
+        params.flow = flow_from_url[0]
+    return params
+
+
+class XrayApi:
+    def __init__(self, api_host: str = "127.0.0.1", api_port: int = 8080) -> None:
+        channel: Channel = insecure_channel(f"{api_host}:{api_port}")
+        self._handler_stub = HandlerServiceStub(channel)
+        self._route_stub: RoutingServiceStub = RoutingServiceStub(channel)
+
+    def add_outbound(self, params: OutboundParams, tag: str = "outbound") -> None:
+        try:
+            ip_address(params.address)
+            address = IPOrDomain(ip=bytes(map(int, params.address.split("."))))
+        except ValueError:
+            address = IPOrDomain(domain=params.address)
+
+        # Proxy settings по протоколу
+        if params.protocol == "vless":
+            proxy = VlessOutboundConfig(
+                vnext=[
+                    ServerEndpoint(
+                        address=address,
+                        port=params.port,
+                        user=[
+                            User(
+                                level=0,
+                                account=ToTypedMessage(
+                                    VlessAccount(
+                                        id=params.user_id,
+                                        encryption="none",
+                                        flow=params.flow,
+                                    ),
+                                ),
+                            ),
+                        ],
+                    ),
+                ],
+            )
+        else:
+            msg = f"Unsupported protocol: {params.protocol}"
+            raise ValueError(msg)
+
+        outbound = OutboundHandlerConfig(
+            tag=tag,
+            proxy_settings=ToTypedMessage(proxy),
+            sender_settings=ToTypedMessage(
+                SenderConfig(
+                    stream_settings=_create_stream_settings(params),
+                    multiplex_settings=MultiplexingConfig(enabled=False),
+                ),
+            ),
         )
-    msg = f"Error of parsing {link}"
-    raise ValueError(msg)
+        self._handler_stub.AddOutbound(AddOutboundRequest(outbound=outbound))
+        logger.info("Added outbound %s", tag)
+
+    def add_inbound_socks(self, port: int, tag: str = "inbound") -> None:
+        inbound = InboundHandlerConfig(
+            tag=tag,
+            receiver_settings=ToTypedMessage(
+                ReceiverConfig(
+                    port_list=PortList(range=[PortRange(From=port, To=port)]),
+                    listen=IPOrDomain(ip=bytes([127, 0, 0, 1])),
+                    sniffing_settings=SniffingConfig(
+                        enabled=True,
+                        destination_override=["http", "tls"],
+                    ),
+                ),
+            ),
+            proxy_settings=ToTypedMessage(
+                SocksServerConfig(
+                    auth_type=AuthType.NO_AUTH,  # type: ignore reportArgumentType
+                    address=IPOrDomain(ip=bytes([0, 0, 0, 0])),
+                    udp_enabled=True,
+                ),
+            ),
+        )
+        self._handler_stub.AddInbound(AddInboundRequest(inbound=inbound))
+        logger.info("Added inbound %s", tag)
+
+    def add_routing_rule(
+        self,
+        in_tag: str,
+        out_tag: str,
+        rule_tag: str | None = None,
+    ) -> None:
+        rt = rule_tag or f"{in_tag}_to_{out_tag}"
+        cfg = Config(
+            domain_strategy=Config.DomainStrategy.AsIs,  # type: ignore reportArgumentType
+            rule=[
+                RoutingRule(
+                    networks=[Network.TCP, Network.UDP],  # type: ignore reportArgumentType
+                    tag=out_tag,
+                    inbound_tag=[in_tag],
+                    rule_tag=rt,
+                ),
+            ],
+        )
+        self._route_stub.AddRule(
+            AddRuleRequest(shouldAppend=True, config=ToTypedMessage(cfg)),
+        )
+        logger.info("Added rule %s", rt)
 
 
-def create_stream_settings(params: OutboundParams) -> StreamConfig:
-    transports = []
+def _create_stream_settings(params: OutboundParams) -> StreamConfig:
+    ts = []
     if params.type == "ws":
-        transports.append(
+        ts.append(
             TransportConfig(
                 protocol_name="websocket",
                 settings=ToTypedMessage(WebsocketConfig(path=params.path)),
             ),
         )
+
     elif params.type == "grpc":
-        transports.append(
+        service_name = (params.service_name or "grpc") + f"_{time.time()}"
+        ts.append(
             TransportConfig(
                 protocol_name="grpc",
-                settings=ToTypedMessage(GrpcConfig(service_name=params.service_name)),
+                settings=ToTypedMessage(
+                    GrpcConfig(
+                        service_name=service_name,
+                        multi_mode=True,
+                        authority=params.host or params.sni or "",
+                        idle_timeout=10,
+                        health_check_timeout=20,
+                    ),
+                ),
             ),
         )
     elif params.type == "h2":
-        transports.append(
+        ts.append(
             TransportConfig(
                 protocol_name="http",
                 settings=ToTypedMessage(
@@ -105,87 +235,39 @@ def create_stream_settings(params: OutboundParams) -> StreamConfig:
             ),
         )
 
-    security = params.security.lower()
-    if security == "tls":
-        security_type = GetMessageType(TlsConfig)
-        security_settings = [
+    sec = params.security.lower()
+    if sec == "tls":
+        stype = GetMessageType(TlsConfig)
+        sconf = [
             ToTypedMessage(TlsConfig(server_name=params.sni, allow_insecure=False)),
         ]
-
-    elif security == "reality":
-        security_type = GetMessageType(RealityConfig)
-        security_settings = [
+    elif sec == "reality":
+        stype = GetMessageType(RealityConfig)
+        sb = bytes.fromhex(params.sid)
+        # длина ровно до 8 байт (16 hex) — так и будет при генерации выше
+        sconf = [
             ToTypedMessage(
                 RealityConfig(
                     server_name=params.sni,
-                    public_key=decode_base64url(params.pbk),
-                    short_id=bytes.fromhex("1f"),
+                    public_key=_decode_base64url(params.pbk),
+                    short_id=sb,
                     Fingerprint=params.fp,
                     show=False,
                 ),
             ),
         ]
     else:
-        security_type = 0
-        security_settings = []
+        stype = 0
+        sconf = []
 
     return StreamConfig(
         protocol_name=params.type,
-        transport_settings=transports,
-        # security_type=security_type,
-        security_type=str(security_type),
-        security_settings=security_settings,
+        transport_settings=ts,
+        security_type=str(stype),
+        security_settings=sconf,
     )
 
 
-def add_outbound(
-    api_host: str,
-    api_port: int,
-    params: OutboundParams,
-    tag: str = "auto-outbound",
-) -> None:
-    channel: Channel = insecure_channel(f"{api_host}:{api_port}")
-    stub = HandlerServiceStub(channel)
-
-    if params.protocol == "vless":
-        proxy_config = VlessOutboundConfig(
-            vnext=[
-                ServerEndpoint(
-                    address=IPOrDomain(domain=params.address),
-                    port=params.port,
-                    user=[
-                        User(
-                            level=0,
-                            account=ToTypedMessage(
-                                VlessAccount(id=params.user_id, encryption="none"),
-                            ),
-                        ),
-                    ],
-                ),
-            ],
-        )
-
-    else:
-        error_msg = "Unsuported protocol: " + params.protocol
-        logger.error(error_msg)
-        raise ValueError(error_msg)
-
-    outbound_config = OutboundHandlerConfig(
-        tag=tag,
-        proxy_settings=ToTypedMessage(proxy_config),
-        sender_settings=ToTypedMessage(
-            SenderConfig(
-                stream_settings=create_stream_settings(params),
-                multiplex_settings=MultiplexingConfig(enabled=False),
-            ),
-        ),
-    )
-
-    stub.AddOutbound(AddOutboundRequest(outbound=outbound_config))
-    logger.info("Outbound '%s' successfully added", tag)
-
-
-params = parse_url(
-    "vless://ca9ac6fc-7269-42c9-8e48-18d8f0449750@uae.panelmarzban.com:3040?security=reality&type=tcp&sni=refersion.com&pbk=21V_VkMUD2XRbyRDg7hjpblUAwxHvlLmbarATdhhJQI&fp=chrome#%F0%9F%94%92%F0%9F%87%A6%F0%9F%87%AA%20AE%2051.112.83.198%20%E2%97%88%20tcp%3A3040%20%E2%97%88%20Amazon.com%2C%20Inc.%20%2F%20Amazon%20Technologies%20Inc%20%E2%97%88%20a83f9",
-)
-add_outbound("127.0.0.1", 8080, params)
+def _decode_base64url(s: str) -> bytes:
+    pad = "=" * (-len(s) % 4)
+    return base64.urlsafe_b64decode(s + pad)
