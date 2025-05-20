@@ -3,9 +3,7 @@ import time
 from dataclasses import dataclass, field
 
 import httpx
-
-from src.parser import parse
-from src.server import ServerEntity
+from src.servers import ServerEntity
 
 
 @dataclass
