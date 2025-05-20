@@ -623,6 +623,7 @@ name = "vpn-topservers"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "psutil" },
     { name = "xcapi" },
 ]
 
@@ -632,7 +633,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "xcapi", specifier = ">=24.11.21" }]
+requires-dist = [
+    { name = "psutil", specifier = ">=7.0.0" },
+    { name = "xcapi", specifier = ">=24.11.21" },
+]
 
 [package.metadata.requires-dev]
 dev = [{ name = "ipykernel", specifier = ">=6.29.5" }]
