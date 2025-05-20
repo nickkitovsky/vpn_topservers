@@ -1,6 +1,5 @@
 import logging
 import pathlib
-from subprocess import CREATE_NO_WINDOW
 
 import psutil
 
@@ -22,7 +21,6 @@ class XrayController:
         self.process = psutil.Popen(
             [self.binary_path],
             cwd=str(XRAY_DIR),
-            creationflags=CREATE_NO_WINDOW,  # Windows only: hides console
         )
         logger.info("Started xray.exe with PID: %s", self.process.pid)
 
@@ -44,8 +42,18 @@ class XrayController:
 
     def _terminate_process(self, process: psutil.Process) -> None:
         logger.info("Stopping xray.exe with PID: %s", process.info["pid"])
-        process.terminate()
-        process.wait(timeout=10)
+        try:
+            process.terminate()
+            process.wait(timeout=5)
+        except psutil.NoSuchProcess:
+            logger.warning("Process %s already terminated.", process.info["pid"])
+        except psutil.TimeoutExpired:
+            logger.warning(
+                "Process %s did not terminate in time, killing it.",
+                process.info["pid"],
+            )
+            process.kill()  # If it doesn't terminate, force kill it.
+            process.wait(timeout=5)
         self.process = None
 
     def _find_xray_proc(self) -> psutil.Process | None:
