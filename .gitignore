@@ -5,9 +5,11 @@ build/
 dist/
 wheels/
 *.egg-info
-
+.vscode
 # Virtual environments
 .venv
 /logs
 /xray
 debug_notebook.ipynb
+/src/bk*.py
+
