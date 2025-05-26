@@ -55,15 +55,15 @@ class OutboundParams:
     service_name: str = ""
     host: str = ""
     alpn: list | None = None
-    sid: str = ""  # будет заполнено позже
+    sid: str = ""
     flow: str = ""
 
 
 def parse_url(link: str) -> OutboundParams:
     parsed = urlparse(link)
-    query = parse_qs(parsed.query)
     protocol = parsed.scheme
     user_id = parsed.username or ""
+    query = parse_qs(parsed.query)
 
     def get_param(key: str) -> str:
         return query.get(key, [""])[0]
@@ -73,7 +73,6 @@ def parse_url(link: str) -> OutboundParams:
         logger.error(msg)
         raise ValueError(msg)
 
-    # Парсим все базовые поля
     params = OutboundParams(
         protocol=protocol,
         address=parsed.hostname,
@@ -105,38 +104,31 @@ class XrayApi:
         self._handler_stub = HandlerServiceStub(channel)
         self._route_stub: RoutingServiceStub = RoutingServiceStub(channel)
 
-    def add_outbound(self, params: OutboundParams, tag: str = "outbound") -> None:
-        try:
-            ip_address(params.address)
-            address = IPOrDomain(ip=bytes(map(int, params.address.split("."))))
-        except ValueError:
-            address = IPOrDomain(domain=params.address)
-
-        # Proxy settings по протоколу
-        if params.protocol == "vless":
-            proxy = VlessOutboundConfig(
-                vnext=[
-                    ServerEndpoint(
-                        address=address,
-                        port=params.port,
-                        user=[
-                            User(
-                                level=0,
-                                account=ToTypedMessage(
-                                    VlessAccount(
-                                        id=params.user_id,
-                                        encryption="none",
-                                        flow=params.flow,
-                                    ),
-                                ),
-                            ),
-                        ],
-                    ),
-                ],
-            )
-        else:
+    def add_outbound_vless(self, params: OutboundParams, tag: str = "outbound") -> None:
+        if params.protocol != "vless":
             msg = f"Unsupported protocol: {params.protocol}"
             raise ValueError(msg)
+        address = _parse_address(params.address)
+        proxy = VlessOutboundConfig(
+            vnext=[
+                ServerEndpoint(
+                    address=address,
+                    port=params.port,
+                    user=[
+                        User(
+                            level=0,
+                            account=ToTypedMessage(
+                                VlessAccount(
+                                    id=params.user_id,
+                                    encryption="none",
+                                    flow=params.flow,
+                                ),
+                            ),
+                        ),
+                    ],
+                ),
+            ],
+        )
 
         outbound = OutboundHandlerConfig(
             tag=tag,
@@ -197,6 +189,19 @@ class XrayApi:
             AddRuleRequest(shouldAppend=True, config=ToTypedMessage(cfg)),
         )
         logger.info("Added rule %s", rt)
+
+
+def _parse_address(address: str) -> IPOrDomain:
+    try:
+        try:
+            ip_address(address)
+            return IPOrDomain(ip=bytes(map(int, address.split("."))))
+        except ValueError:
+            return IPOrDomain(domain=address)
+    except Exception as e:
+        msg = f"Invalid address format: {address}"
+        logger.exception(msg)
+        raise ValueError(msg) from e
 
 
 def _create_stream_settings(params: OutboundParams) -> StreamConfig:
