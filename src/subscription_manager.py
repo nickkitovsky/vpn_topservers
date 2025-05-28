@@ -39,25 +39,6 @@ class SubscriptionManager:
             raise
         return resp.text
 
-    async def _get_connection_time(
-        self,
-        server_entity: Server,
-    ) -> Server:
-        start_time = time.time()
-        async with self._semaphore:
-            with contextlib.suppress(asyncio.TimeoutError, OSError):
-                _, writer = await asyncio.wait_for(
-                    asyncio.open_connection(
-                        server_entity.connection_details.address,
-                        server_entity.connection_details.port,
-                    ),
-                    timeout=self.connection_timeout,
-                )
-                writer.close()
-                await writer.wait_closed()
-                server_entity.connection_time = round(time.time() - start_time, 3)
-        return server_entity
-
     async def add_subscription(self, client: httpx.AsyncClient, url: str) -> None:
         logger.info("Processing subscription from %s", url)
         try:
@@ -87,3 +68,22 @@ class SubscriptionManager:
     def top_fastest_connention_time_servers(self, n: int = 100) -> list[Server]:
         servers = [s for sub in self.subscriptions for s in sub.servers]
         return sorted(servers, key=lambda x: x.connection_time)[:n]
+
+    async def _get_connection_time(
+        self,
+        server_entity: Server,
+    ) -> Server:
+        start_time = time.time()
+        async with self._semaphore:
+            with contextlib.suppress(asyncio.TimeoutError, OSError):
+                _, writer = await asyncio.wait_for(
+                    asyncio.open_connection(
+                        server_entity.connection_details.address,
+                        server_entity.connection_details.port,
+                    ),
+                    timeout=self.connection_timeout,
+                )
+                writer.close()
+                await writer.wait_closed()
+                server_entity.connection_time = round(time.time() - start_time, 3)
+        return server_entity
