@@ -1,9 +1,7 @@
 import base64
 import logging
 import time
-from dataclasses import dataclass
 from ipaddress import ip_address
-from urllib.parse import parse_qs, urlparse
 
 from grpc import Channel, insecure_channel
 from xcapi.xray.app.proxyman.command.command_grpc_pb import HandlerServiceStub
@@ -37,65 +35,9 @@ from xcapi.xray.transport.internet.reality.config_pb import Config as RealityCon
 from xcapi.xray.transport.internet.tls.config_pb import Config as TlsConfig
 from xcapi.xray.transport.internet.websocket.config_pb import Config as WebsocketConfig
 
+from .schemas import OutboundParams, Server
+
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class OutboundParams:
-    protocol: str
-    address: str
-    port: int
-    user_id: str
-    sni: str = ""
-    pbk: str = ""
-    security: str = "none"
-    type: str = "tcp"
-    fp: str = ""
-    path: str = "/"
-    service_name: str = ""
-    host: str = ""
-    alpn: list | None = None
-    sid: str = ""
-    flow: str = ""
-
-
-def parse_url(link: str) -> OutboundParams:
-    parsed = urlparse(link)
-    protocol = parsed.scheme
-    user_id = parsed.username or ""
-    query = parse_qs(parsed.query)
-
-    def get_param(key: str) -> str:
-        return query.get(key, [""])[0]
-
-    if not (parsed.hostname and parsed.port and user_id):
-        msg = f"Error parsing link: {link}"
-        logger.error(msg)
-        raise ValueError(msg)
-
-    params = OutboundParams(
-        protocol=protocol,
-        address=parsed.hostname,
-        port=parsed.port,
-        user_id=user_id,
-        sni=get_param("sni"),
-        pbk=get_param("pbk"),
-        security=get_param("security") or "none",
-        type=get_param("type") or "tcp",
-        fp=get_param("fp"),
-        path=get_param("path") or "/",
-        service_name=get_param("serviceName"),
-        host=get_param("host"),
-        alpn=query.get("alpn"),
-    )
-    sid_from_url = get_param("sid")
-    if sid_from_url:
-        params.sid = sid_from_url
-    else:
-        params.sid = ""
-    if flow_from_url := query.get("flow"):
-        params.flow = flow_from_url[0]
-    return params
 
 
 class XrayApi:
@@ -104,24 +46,28 @@ class XrayApi:
         self._handler_stub = HandlerServiceStub(channel)
         self._route_stub: RoutingServiceStub = RoutingServiceStub(channel)
 
-    def add_outbound_vless(self, params: OutboundParams, tag: str = "outbound") -> None:
-        if params.protocol != "vless":
-            msg = f"Unsupported protocol: {params.protocol}"
+    def add_outbound_vless(
+        self,
+        server: Server,
+        tag: str = "outbound",
+    ) -> None:
+        if server.connection_details.protocol != "vless":
+            msg = f"Unsupported protocol: {server.connection_details.protocol}"
             raise ValueError(msg)
-        address = _parse_address(params.address)
+        address = _parse_address(server.connection_details.address)
         proxy = VlessOutboundConfig(
             vnext=[
                 ServerEndpoint(
                     address=address,
-                    port=params.port,
+                    port=server.connection_details.port,
                     user=[
                         User(
                             level=0,
                             account=ToTypedMessage(
                                 VlessAccount(
-                                    id=params.user_id,
+                                    id=server.params.user_id,
                                     encryption="none",
-                                    flow=params.flow,
+                                    flow=server.params.flow,
                                 ),
                             ),
                         ),
@@ -135,7 +81,7 @@ class XrayApi:
             proxy_settings=ToTypedMessage(proxy),
             sender_settings=ToTypedMessage(
                 SenderConfig(
-                    stream_settings=_create_stream_settings(params),
+                    stream_settings=_create_stream_settings(server.params),
                     multiplex_settings=MultiplexingConfig(enabled=False),
                 ),
             ),
