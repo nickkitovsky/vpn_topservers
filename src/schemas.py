@@ -1,5 +1,5 @@
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from urllib.parse import parse_qs, urlparse
 
@@ -35,7 +35,7 @@ class OutboundParams:
 
 
 @dataclass
-class ServerEntity:
+class Server:
     connection_details: ConnectionDetails
     params: OutboundParams
     parent_url: str = ""
@@ -43,7 +43,7 @@ class ServerEntity:
     download_speed: float = -1.0
 
     @classmethod
-    def from_url(cls, url: str) -> "ServerEntity":
+    def from_url(cls, url: str) -> "Server":
         parsed = urlparse(url)
 
         if not (parsed.scheme and parsed.hostname and parsed.port):
@@ -87,4 +87,32 @@ class ServerEntity:
             connection_details=conn_detail,
             params=params,
             parent_url=url,
+        )
+
+
+@dataclass
+class Subscription:
+    url: str
+    servers: list[Server] = field(default_factory=list)
+
+    @classmethod
+    def from_url_content(
+        cls,
+        url: str,
+        subscription_content: str,
+        *,
+        only_443port: bool = False,
+    ) -> "Subscription":
+        servers = []
+        for link in subscription_content.splitlines():
+            try:
+                server = Server.from_url(link.strip())
+                if only_443port and server.connection_details.port != 443:  # noqa: PLR2004
+                    continue
+                servers.append(server)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Skipping invalid link: %s. Reason: %s", link, e)
+        return cls(
+            url,
+            servers=servers,
         )
