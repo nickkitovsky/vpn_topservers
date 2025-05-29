@@ -55,6 +55,47 @@ class ServerProber:
                 await writer.wait_closed()
                 server.connection_time = round(time.time() - start_time, 3)
 
+    async def fetch_url(self, client: httpx.AsyncClient, url: str):
+        async with self._semaphore:
+            start = time.time()
+            try:
+                response = await client.get(url)
+                response.raise_for_status()
+                response_time = time.time() - start
+                logger.info(
+                    f"  -> {url} | Status: {response.status_code} | Time: {response_time:.2f}s",
+                )
+                return url, response_time
+            except Exception as e:
+                logger.exception(f"{url} | Error: {e}")
+                return url, None
+
+
+async def fetch_all_with_proxy(proxy: str) -> dict[str, float | None]:
+    print(f"\n[Запуск клиента через {proxy}]")
+    results = {}
+    async with httpx.AsyncClient(proxy=proxy, timeout=timeout) as client:
+        tasks = [fetch_url(client, url) for url in urls]
+        completed = await asyncio.gather(*tasks)
+        results = {url: duration for url, duration in completed}
+    return results
+
+
+async def main():
+    tasks = {
+        proxy: asyncio.create_task(fetch_all_with_proxy(proxy)) for proxy in proxies
+    }
+    results = await asyncio.gather(*tasks.values())
+
+    # Вывод результатов
+    for proxy, result in zip(tasks.keys(), results):
+        print(f"\nРезультаты для {proxy}:")
+        for url, time_taken in result.items():
+            if time_taken is not None:
+                print(f"  {url} -> {time_taken:.2f}s")
+            else:
+                print(f"  {url} -> ошибка")
+
 
 class SubscriptionManager:
     def __init__(
