@@ -40,13 +40,13 @@ from xcapi.xray.transport.internet.websocket.config_pb import Config as Websocke
 from .schemas import OutboundParams, Server
 
 XRAY_DIR = pathlib.Path(__file__).resolve().parent.parent / "xray"
-BINARY_FILE = "xray.exe"
+BINARY_FILE = "xray"
 logger = logging.getLogger(__name__)
 
 
 class XrayController:
-    def __init__(self) -> None:
-        self.binary_path = XRAY_DIR / pathlib.Path(BINARY_FILE)
+    def __init__(self, xray_dir: pathlib.Path = XRAY_DIR) -> None:
+        self.binary_path = xray_dir / pathlib.Path(BINARY_FILE)
         self.process: psutil.Popen | None = None
 
     def run(self) -> None:
@@ -169,6 +169,7 @@ class XrayApi:
                 ),
             ),
         )
+
         self._handler_stub.AddInbound(AddInboundRequest(inbound=inbound))
         logger.info("Added inbound %s", tag)
 
