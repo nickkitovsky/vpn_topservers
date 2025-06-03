@@ -83,6 +83,14 @@ class Server:
             alpn=query.get("alpn"),
         )
 
+        sid_from_url = get_param("sid")
+        if sid_from_url:
+            params.sid = sid_from_url
+        else:
+            params.sid = ""
+        if flow_from_url := query.get("flow"):
+            params.flow = flow_from_url[0]
+
         return cls(
             connection_details=conn_detail,
             params=params,

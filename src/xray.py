@@ -6,6 +6,7 @@ from ipaddress import ip_address
 
 import psutil
 from grpc import Channel, insecure_channel
+from schemas import OutboundParams, Server
 from xcapi.xray.app.proxyman.command.command_grpc_pb import HandlerServiceStub
 from xcapi.xray.app.proxyman.command.command_pb import (
     AddInboundRequest,
@@ -36,8 +37,6 @@ from xcapi.xray.transport.internet.http.config_pb import Config as HttpConfig
 from xcapi.xray.transport.internet.reality.config_pb import Config as RealityConfig
 from xcapi.xray.transport.internet.tls.config_pb import Config as TlsConfig
 from xcapi.xray.transport.internet.websocket.config_pb import Config as WebsocketConfig
-
-from .schemas import OutboundParams, Server
 
 XRAY_DIR = pathlib.Path(__file__).resolve().parent.parent / "xray"
 BINARY_FILE = "xray"
@@ -110,7 +109,7 @@ class XrayApi:
         server: Server,
         tag: str = "outbound",
     ) -> None:
-        if server.connection_details.protocol != "vless":
+        if server.connection_details.protocol.value != "vless":
             msg = f"Unsupported protocol: {server.connection_details.protocol}"
             raise ValueError(msg)
         address = _parse_address(server.connection_details.address)
