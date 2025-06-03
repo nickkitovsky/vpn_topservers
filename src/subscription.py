@@ -27,11 +27,9 @@ class SubscriptionManager:
     async def collect_subscription_data(self, *, only_alive: bool = True) -> None:
         async with httpx.AsyncClient() as client:
             subscription_tasks = [
-                _fetch_subscription_url(
+                self._fetch_subscription_url(
                     url,
                     client,
-                    self.timeout,
-                    only_443port=self.only_443port,
                 )
                 for url in self.urls
             ]
@@ -71,24 +69,21 @@ class SubscriptionManager:
         all_servers = [s for sub in self.subscriptions for s in sub.servers]
         return sorted(all_servers, key=lambda s: s.connection_time)[:n]
 
+    async def _fetch_subscription_url(
+        self,
+        url: str,
+        client: httpx.AsyncClient,
+    ) -> Subscription | None:
+        logger.info("Fetching subscription from %s", url)
+        try:
+            response = await client.get(url, timeout=self.timeout)
+            response.raise_for_status()
+        except (httpx.RequestError, httpx.HTTPStatusError):
+            logger.exception("Failed to fetch subscription from %s", url)
+            return None
 
-async def _fetch_subscription_url(
-    url: str,
-    client: httpx.AsyncClient,
-    timeout: int = 1,
-    *,
-    only_443port: bool = False,
-) -> Subscription | None:
-    logger.info("Fetching subscription from %s", url)
-    try:
-        response = await client.get(url, timeout=timeout)
-        response.raise_for_status()
-    except (httpx.RequestError, httpx.HTTPStatusError):
-        logger.exception("Failed to fetch subscription from %s", url)
-        return None
-
-    return Subscription.from_url_content(
-        url,
-        response.text,
-        only_443port=only_443port,
-    )
+        return Subscription.from_url_content(
+            url,
+            response.text,
+            only_443port=self.only_443port,
+        )
