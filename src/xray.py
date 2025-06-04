@@ -11,6 +11,7 @@ from xcapi.xray.app.proxyman.command.command_grpc_pb import HandlerServiceStub
 from xcapi.xray.app.proxyman.command.command_pb import (
     AddInboundRequest,
     AddOutboundRequest,
+    RemoveOutboundRequest,
 )
 from xcapi.xray.app.proxyman.config_pb import (
     MultiplexingConfig,
@@ -195,6 +196,10 @@ class XrayApi:
             AddRuleRequest(shouldAppend=True, config=ToTypedMessage(cfg)),
         )
         logger.info("Added rule %s", rt)
+
+    def remove_outbound(self, tag: str) -> None:
+        self._handler_stub.RemoveOutbound(RemoveOutboundRequest(tag=tag))
+        logger.info("Removed outbound %s", tag)
 
 
 def _parse_address(address: str) -> IPOrDomain:
