@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, StrEnum
 from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
@@ -10,7 +10,18 @@ class Protocols(Enum):
     VLESS = "vless"
 
 
-@dataclass(frozen=True)
+class Sites(StrEnum):
+    GOOGLE = "https://www.google.com"
+    INSTAGRAM = "https://www.instagram.com"
+
+
+@dataclass
+class SitesResponseTime:
+    instagram: float = 999.0
+    google: float = 999.0
+
+
+@dataclass
 class ConnectionDetails:
     protocol: Protocols
     address: str
@@ -37,6 +48,7 @@ class OutboundParams:
 @dataclass
 class Server:
     connection_details: ConnectionDetails
+    repose_time: SitesResponseTime
     params: OutboundParams
     parent_url: str = ""
     connection_time: float = 999.0
@@ -93,6 +105,7 @@ class Server:
 
         return cls(
             connection_details=conn_detail,
+            repose_time=SitesResponseTime(),
             params=params,
             parent_url=url,
         )

@@ -65,9 +65,11 @@ class SubscriptionManager:
                     subscription.url,
                 )
 
-    def top_fastest_connention_time_servers(self, n: int = 100) -> list[Server]:
+    def top_fastest_connention_time_servers(self, proxy_count: int = 0) -> list[Server]:
         all_servers = [s for sub in self.subscriptions for s in sub.servers]
-        return sorted(all_servers, key=lambda s: s.connection_time)[:n]
+        if proxy_count == 0:
+            return sorted(all_servers, key=lambda s: s.connection_time)
+        return sorted(all_servers, key=lambda s: s.connection_time)[:proxy_count]
 
     async def _fetch_subscription_url(
         self,
