@@ -39,6 +39,7 @@ from xcapi.xray.transport.internet.tls.config_pb import Config as TlsConfig
 from xcapi.xray.transport.internet.websocket.config_pb import Config as WebsocketConfig
 
 XRAY_DIR = pathlib.Path(__file__).resolve().parent.parent / "xray"
+XRAY_CONFIG_DIR = pathlib.Path("configs")
 BINARY_FILE = "xray"
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class XrayController:
             return
 
         self.process = psutil.Popen(
-            [self.binary_path],
+            [self.binary_path, "-confdir", str(XRAY_DIR / XRAY_CONFIG_DIR)],
             cwd=str(XRAY_DIR),
         )
         logger.info("Started xray.exe with PID: %s", self.process.pid)
@@ -281,3 +282,10 @@ def _create_stream_settings(params: OutboundParams) -> StreamConfig:
 def _decode_base64url(s: str) -> bytes:
     pad = "=" * (-len(s) % 4)
     return base64.urlsafe_b64decode(s + pad)
+
+
+api = XrayApi()
+url0 = "vless://7bda027c-cbc8-488f-864f-cfb415cd8d77@unique.bitiboot.com:443?encryption=none&security=reality&sni=analytics.google.com&fp=chrome&pbk=q70yFMTo4Dz6IWwVcL9icqgJPgyIuv3j3n5fZxym6kg&sid=40e3350da285&type=tcp&headerType=none#%F0%9F%94%92%F0%9F%87%A9%F0%9F%87%AA%20DE%20157.173.127.227%20%E2%97%88%20tcp%3A443%20%E2%97%88%20Contabo%20%E2%97%88%20596b9"
+url1 = "vless://e657e5fb-c417-4d3f-d84e-a3a8f010f9fa@31.59.111.49:33718?encryption=none&flow=xtls-rprx-vision&security=reality&sni=icloud.cdn-apple.com&fp=chrome&pbk=g1f1wLjim5gOVGnI5LGUV0dL4iFXPoiepOPZfSxJe14&type=tcp&headerType=none#%F0%9F%94%92%F0%9F%87%BA%F0%9F%87%B8%20US%20warp%20%E2%97%88%20tcp%3A33718%20%E2%97%88%202414e"
+api.add_outbound_vless(Server.from_url(url0), "outbound0")
+api.add_outbound_vless(Server.from_url(url1), "outbound1")
