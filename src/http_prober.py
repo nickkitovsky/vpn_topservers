@@ -6,36 +6,49 @@ from collections.abc import Generator
 from typing import Any
 
 import httpx
+from logger_config import setup_logging
 from schemas import Server
 from xray import XrayApi
 
 logger = logging.getLogger(__name__)
-
-MAX_CONCURENT_REQUESTS = 50
-MAX_CONCURENT_SERVERS = 5
-TIMEOUT = 10
-START_INBOUND_PORT = 60000
+setup_logging(debug=True)
 API_URL = "127.0.0.1:8080"
 
 
 class HttpProbber:
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
-        max_concurent_requests: int = MAX_CONCURENT_REQUESTS,
-        max_concurent_servers: int = MAX_CONCURENT_SERVERS,
-        timeout: int = TIMEOUT,
+        max_concurent_requests: int = 200,
+        max_concurent_servers: int = 50,
+        timeout: int = 5,
+        start_inbound_port: int = 60000,
         api_url: str = API_URL,
+        probe_urls: list[str] | None = None,
     ) -> None:
         self.timeout = timeout
         self.max_concurent_requests = max_concurent_requests
         self.max_concurent_servers = max_concurent_servers
+        if not probe_urls:
+            self.probe_urls = [
+                "https://instagram.com",
+                "https://chatgpt.com",
+                "http://cp.cloudflare.com/",
+                "https://www.google.com/gen_204",
+            ]
+        self._start_inbound_port = start_inbound_port
         self._xray_api = XrayApi(api_url)
-        self._setup_pool()
+        self.setup_pool()
 
-    async def run(self, servers: list[Server], urls: list[str]) -> None:
+    async def run(self, servers: list[Server]) -> None:
         for chunk in self._chunk_servers(servers):
+            logger.debug(
+                "Processing chunk of %d servers: %s",
+                len(chunk),
+                [s.connection_details.address for s in chunk],
+            )
             with self.outbound_pool(chunk):
-                await self._check_all_servers(chunk, urls)
+                await self._check_all_servers(chunk, self.probe_urls)
+        logger.info("Finished probing all servers.")
 
     @contextlib.contextmanager
     def outbound_pool(
@@ -43,9 +56,23 @@ class HttpProbber:
         servers: list[Server],
     ) -> Generator[None, Any, None]:
         for num, server in enumerate(servers):
-            self._xray_api.add_outbound_vless(server, f"outbound{num}")
+            logger.debug(
+                "Adding outbound %s for server %s",
+                f"outbound{num}",
+                server.connection_details.address,
+            )
+            # TODO FIX ANY API ERROR
+            try:
+                self._xray_api.add_outbound_vless(server, f"outbound{num}")
+            except Exception:  # noqa: BLE001
+                logger.error(
+                    "Error adding outbound %s for server %s: %s",
+                    f"outbound{num}",
+                    server.connection_details,
+                )
         yield
         for num, _ in enumerate(servers):
+            logger.debug("Removing outbound %s", f"outbound{num}")
             self._xray_api.remove_outbound(f"outbound{num}")
 
     async def _get_url_response_time(
@@ -58,10 +85,16 @@ class HttpProbber:
             start_time = time.time()
             try:
                 response = await client.get(url, timeout=self.timeout)
-                response.raise_for_status()
-                # _ = response.text  # читаем тело, чтобы запрос был завершён корректно
+                logger.debug(
+                    "URL: %s, Status: %s, Client ID: %s",
+                    url,
+                    response.status_code,
+                    id(client),
+                )
+                _ = response.text
                 return time.time() - start_time
-            except Exception:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
+                logger.error("Error fetching URL %s: %s", url, e)  # noqa: TRY400
                 return 999.0
 
     async def _check_server(
@@ -72,20 +105,17 @@ class HttpProbber:
         semaphore: asyncio.Semaphore,
     ) -> None:
         async with httpx.AsyncClient(
-            proxy=f"socks5://127.0.0.1:{START_INBOUND_PORT + proxy_number}",
+            proxy=f"socks5://127.0.0.1:{self._start_inbound_port + proxy_number}",
         ) as client:
+            logger.debug(
+                "Using proxy on port %d for server %s",
+                self._start_inbound_port + proxy_number,
+                server.connection_details.address,
+            )
             results = await asyncio.gather(
                 *[self._get_url_response_time(client, url, semaphore) for url in urls],
             )
             server.response_time.update(dict(zip(urls, results)))
-            # tasks = {
-            #     url: asyncio.create_task(
-            #         self._get_url_response_time(client, url, semaphore),
-            #     )
-            #     for url in urls
-            # }
-            # for url, task in tasks.items():
-            #     server.response_time[url] = await task
 
     async def _check_all_servers(
         self,
@@ -93,6 +123,11 @@ class HttpProbber:
         urls: list[str],
     ) -> None:
         semaphore = asyncio.Semaphore(self.max_concurent_requests)
+        logger.debug(
+            "Checking servers %s for URLs %s",
+            [s.connection_details.address for s in servers],
+            urls,
+        )
         await asyncio.gather(
             *(
                 self._check_server(server, proxy_number, urls, semaphore)
@@ -110,7 +145,10 @@ class HttpProbber:
         ]
         yield from chunked_servers
 
-    def _setup_pool(self) -> None:
+    def setup_pool(self) -> None:
         for i in range(self.max_concurent_servers):
-            self._xray_api.add_inbound_socks(START_INBOUND_PORT + i, f"inbound{i}")
+            self._xray_api.add_inbound_socks(
+                self._start_inbound_port + i,
+                f"inbound{i}",
+            )
             self._xray_api.add_routing_rule(f"inbound{i}", f"outbound{i}", f"rule{i}")

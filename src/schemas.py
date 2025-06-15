@@ -26,7 +26,7 @@ class ConnectionDetails:
     protocol: Protocols
     address: str
     port: int
-    raw_link: str
+    raw_link: str = field(repr=False)
 
 
 @dataclass
@@ -48,11 +48,10 @@ class OutboundParams:
 @dataclass
 class Server:
     connection_details: ConnectionDetails
-    repose_time: SitesResponseTime
-    params: OutboundParams
-    parent_url: str = ""
+    params: OutboundParams = field(repr=False)
+    response_time: dict = field(default_factory=dict)
+    parent_url: str = field(default="", repr=False)
     connection_time: float = 999.0
-    download_speed: float = -1.0
 
     @classmethod
     def from_url(cls, url: str) -> "Server":
@@ -67,7 +66,7 @@ class Server:
             protocol = Protocols(parsed.scheme)
         except ValueError:
             msg = f"Unsupported protocol in link: {url}"
-            logger.exception(msg)
+            logger.error(msg)  # noqa: TRY400
             raise
 
         conn_detail = ConnectionDetails(
@@ -94,7 +93,7 @@ class Server:
             host=get_param("host"),
             alpn=query.get("alpn"),
         )
-
+        # TODO: move it to constructor
         sid_from_url = get_param("sid")
         if sid_from_url:
             params.sid = sid_from_url
@@ -105,16 +104,33 @@ class Server:
 
         return cls(
             connection_details=conn_detail,
-            repose_time=SitesResponseTime(),
             params=params,
+            response_time={},
             parent_url=url,
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.connection_details.address,
+                self.connection_details.port,
+                self.params.user_id,
+            ),
+        )
+
+    def __eq__(self, other: object) -> bool:
+        return bool(
+            isinstance(other, Server)
+            and self.connection_details.address == other.connection_details.address
+            and self.connection_details.port == other.connection_details.port
+            and self.params.user_id == other.params.user_id,
         )
 
 
 @dataclass
 class Subscription:
     url: str
-    servers: list[Server] = field(default_factory=list)
+    servers: set[Server] = field(default_factory=set)
 
     @classmethod
     def from_url_content(
@@ -124,13 +140,15 @@ class Subscription:
         *,
         only_443port: bool = False,
     ) -> "Subscription":
-        servers = []
+        servers = set()
         for link in subscription_content.splitlines():
             try:
                 server = Server.from_url(link.strip())
-                if only_443port and server.connection_details.port != 443:  # noqa: PLR2004
+                if (
+                    only_443port and server.connection_details.port != 443
+                ) or server in servers:
                     continue
-                servers.append(server)
+                servers.add(server)
             except Exception as e:  # noqa: BLE001
                 logger.warning("Skipping invalid link: %s. Reason: %s", link, e)
         return cls(
