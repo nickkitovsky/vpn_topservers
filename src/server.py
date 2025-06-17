@@ -1,24 +1,19 @@
 import logging
+from collections.abc import Generator, Iterable, Iterator
 from dataclasses import dataclass, field
-from enum import Enum, StrEnum
+from enum import Enum
+from itertools import islice
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlparse
+
+if TYPE_CHECKING:
+    from src.subscription import Subscription
 
 logger = logging.getLogger(__name__)
 
 
 class Protocols(Enum):
     VLESS = "vless"
-
-
-class Sites(StrEnum):
-    GOOGLE = "https://www.google.com"
-    INSTAGRAM = "https://www.instagram.com"
-
-
-@dataclass
-class SitesResponseTime:
-    instagram: float = 999.0
-    google: float = 999.0
 
 
 @dataclass
@@ -92,15 +87,9 @@ class Server:
             service_name=get_param("serviceName"),
             host=get_param("host"),
             alpn=query.get("alpn"),
+            sid=get_param("sid"),
+            flow=get_param("flow"),
         )
-        # TODO: move it to constructor
-        sid_from_url = get_param("sid")
-        if sid_from_url:
-            params.sid = sid_from_url
-        else:
-            params.sid = ""
-        if flow_from_url := query.get("flow"):
-            params.flow = flow_from_url[0]
 
         return cls(
             connection_details=conn_detail,
@@ -127,31 +116,57 @@ class Server:
         )
 
 
-@dataclass
-class Subscription:
-    url: str
-    servers: set[Server] = field(default_factory=set)
+class ServerManager:
+    def __init__(self):
+        self.servers = set()
 
-    @classmethod
-    def from_url_content(
-        cls,
-        url: str,
-        subscription_content: str,
+    def parse_subscriptions(
+        self,
+        subscriptions: list["Subscription"],
         *,
-        only_443port: bool = False,
-    ) -> "Subscription":
-        servers = set()
-        for link in subscription_content.splitlines():
-            try:
-                server = Server.from_url(link.strip())
-                if (
-                    only_443port and server.connection_details.port != 443
-                ) or server in servers:
-                    continue
-                servers.add(server)
-            except Exception as e:  # noqa: BLE001
-                logger.warning("Skipping invalid link: %s. Reason: %s", link, e)
-        return cls(
-            url,
-            servers=servers,
+        only_433_port: bool = False,
+    ) -> None:
+        if only_433_port:
+            self.servers = {
+                s
+                for sub in subscriptions
+                for s in sub.servers
+                if s.connection_details.port == 443  # noqa: PLR2004
+            }
+        else:
+            self.servers = {s for sub in subscriptions for s in sub.servers}
+
+    def fastest_connention_time_servers(
+        self,
+        server_amount: int = 0,
+    ) -> Iterator[Server]:
+        sorted_servers = sorted(self.servers, key=lambda s: s.connection_time)
+        if server_amount == 0:
+            return iter(sorted_servers)
+        return islice(sorted_servers, server_amount)
+
+    def fastest_http_response_time_servers(
+        self,
+        server_amount: int = 0,
+    ) -> Iterator[Server]:
+        sorted_servers = sorted(
+            self.servers,
+            key=lambda s: sum(s.response_time.values()),
         )
+        if server_amount == 0:
+            return iter(sorted_servers)
+        return islice(sorted_servers, server_amount)
+
+    def chunk_servers_iter(
+        self,
+        servers: Iterable[Server],
+        chunk_size: int,
+    ) -> Generator[list[Server], Any, None]:
+        chunk = []
+        for server in servers:
+            chunk.append(server)
+            if len(chunk) == chunk_size:
+                yield chunk
+                chunk = []
+        if chunk:
+            yield chunk
