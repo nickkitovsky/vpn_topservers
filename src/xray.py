@@ -6,7 +6,7 @@ from ipaddress import ip_address
 
 import psutil
 from grpc import Channel, insecure_channel
-from schemas import OutboundParams, Server
+from src.server import OutboundParams, Server
 from xcapi.xray.app.proxyman.command.command_grpc_pb import HandlerServiceStub
 from xcapi.xray.app.proxyman.command.command_pb import (
     AddInboundRequest,
