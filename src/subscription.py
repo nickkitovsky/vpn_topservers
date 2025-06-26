@@ -77,34 +77,35 @@ class SubscriptionManager:
         subscription: Subscription,
         client: httpx.AsyncClient,
         timeout: int = 5,
-    ) -> tuple[Subscription, list[str]]:
+    ) -> tuple[Subscription, str]:
         logger.debug("Fetching subscription from %s", subscription.url)
         try:
             response = await client.get(subscription.url, timeout=timeout)
             response.raise_for_status()  # Raise an exception for bad status codes
         except (httpx.RequestError, httpx.HTTPStatusError):
             logger.warning("Failed to fetch subscription from %s", subscription.url)
-            return subscription, []
+            return subscription, ""
         except Exception:
             logger.exception(
                 "An unexpected error occurred while fetching subscription from %s",
                 subscription.url,
             )
-            return subscription, []
+            return subscription, ""
         else:
-            try:
-                response_text = base64.b64decode(response.text).decode("utf-8")
-            except (binascii.Error, UnicodeDecodeError):
-                response_text = response.text
             logger.debug(
                 "Seccessfully fetched %d servers from %s",
                 len(subscription.servers),
                 subscription.url,
             )
-            return subscription, response_text.splitlines()
+            return subscription, response.text
 
-    def _parse_server_urls(self, subscription_content: list[str]) -> set[Server]:
+    def _parse_server_urls(self, raw_response: str) -> set[Server]:
+        try:
+            response_text = base64.b64decode(raw_response).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError):
+            response_text = raw_response
+
         subscription_urls = (
-            sub for sub in subscription_content if sub.startswith("https://")
+            sub for sub in response_text.splitlines() if sub.startswith("https://")
         )
         return {self.server_parser.parse_url(url) for url in subscription_urls}
