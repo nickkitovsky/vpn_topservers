@@ -1,10 +1,12 @@
 import asyncio
+import base64
+import binascii
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
-from src.server import Server
+from src.server import Server, ServerParser
 
 logger = logging.getLogger(__name__)
 
@@ -12,90 +14,31 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Subscription:
     url: str
-    servers: set[Server] = field(default_factory=set)
+    servers: set[Server] = field(default_factory=set, init=False)
 
-    @classmethod
-    def from_url_content(
-        cls,
-        url: str,
-        subscription_content: str,
-    ) -> "Subscription":
-        servers = set()
-        for link in subscription_content.splitlines():
-            try:
-                server = Server.from_url(link.strip())
-                if () or server in servers:
-                    continue
-                servers.add(server)
-            except Exception:  # noqa: BLE001
-                logger.warning("Skipping invalid link: %s.", link)
-        return cls(
-            url,
-            servers=servers,
+    def __hash__(self) -> int:
+        return hash(self.url)
+
+    def __eq__(self, other: object) -> bool:
+        return bool(
+            isinstance(other, Subscription) and self.url == other.url,
         )
 
 
-class SubscriptionFetcher:
-    def __init__(self, timeout: int = 5, concurent_connections: int = 50) -> None:
-        self.timeout = timeout
-        self.concurent_connections = concurent_connections
-
-    async def fetch_subscriptions(self, urls: list[str]) -> list[Subscription]:
-        async with (
-            asyncio.Semaphore(self.concurent_connections),
-            httpx.AsyncClient() as client,
-        ):
-            subscriptions = await asyncio.gather(
-                *[
-                    self._fetch_subscription_url(
-                        url,
-                        client,
-                    )
-                    for url in urls
-                ],
-            )
-            return [s for s in subscriptions if s is not None]
-
-    async def _fetch_subscription_url(
-        self,
-        url: str,
-        client: httpx.AsyncClient,
-    ) -> Subscription | None:
-        logger.debug("Fetching subscription from %s", url)
-        try:
-            response = await client.get(url, timeout=self.timeout)
-            response.raise_for_status()
-        except (httpx.RequestError, httpx.HTTPStatusError):
-            logger.warning("Failed to fetch subscription from %s", url)
-            return None
-        else:
-            subscription = Subscription.from_url_content(
-                url,
-                response.text,
-            )
-
-            logger.debug(
-                "Seccessfully fetched %d servers from %s",
-                len(subscription.servers),
-                subscription.url,
-            )
-
-        return subscription
-
-
 class SubscriptionManager:
-    def __init__(
-        self,
-    ) -> None:
-        pass
+    def __init__(self) -> None:
+        self.subscriptions = set()
+        self.server_parser = ServerParser()
 
-    def read_subscriptions_file(self, subscription_file: str | Path) -> list[str]:
+    def add_subscription_from_file(self, subscription_file: str | Path) -> None:
         if isinstance(subscription_file, str):
             subscription_file = Path(subscription_file)
         try:
             with subscription_file.open(mode="r", encoding="utf-8") as file:
                 content = file.read()
-            subscriptions = [line for line in content.splitlines() if line.startswith("https://")]
+            subscriptions = [
+                line for line in content.splitlines() if line.startswith("https://")
+            ]
         except FileNotFoundError:
             logger.exception("Subscription file not found: %s", subscription_file)
             raise
@@ -105,4 +48,63 @@ class SubscriptionManager:
                 len(subscriptions),
                 str(subscription_file),
             )
-            return subscriptions
+            self.subscriptions |= {Subscription(url=url) for url in subscriptions}
+
+    async def fetch_subscription_servers(
+        self,
+        timeout: int = 5,
+        concurent_connections: int = 50,
+    ) -> None:
+        async with (
+            asyncio.Semaphore(concurent_connections),
+            httpx.AsyncClient() as client,
+        ):
+            subscription_contents = await asyncio.gather(
+                *[
+                    self._fetch_subscription_url(
+                        subscription,
+                        client,
+                        timeout=timeout,
+                    )
+                    for subscription in self.subscriptions
+                ],
+            )
+            for subscription, subscription_content in subscription_contents:
+                subscription.servers = self._parse_server_urls(subscription_content)
+
+    async def _fetch_subscription_url(
+        self,
+        subscription: Subscription,
+        client: httpx.AsyncClient,
+        timeout: int = 5,
+    ) -> tuple[Subscription, list[str]]:
+        logger.debug("Fetching subscription from %s", subscription.url)
+        try:
+            response = await client.get(subscription.url, timeout=timeout)
+            response.raise_for_status()  # Raise an exception for bad status codes
+        except (httpx.RequestError, httpx.HTTPStatusError):
+            logger.warning("Failed to fetch subscription from %s", subscription.url)
+            return subscription, []
+        except Exception:
+            logger.exception(
+                "An unexpected error occurred while fetching subscription from %s",
+                subscription.url,
+            )
+            return subscription, []
+        else:
+            try:
+                response_text = base64.b64decode(response.text).decode("utf-8")
+            except (binascii.Error, UnicodeDecodeError):
+                response_text = response.text
+            logger.debug(
+                "Seccessfully fetched %d servers from %s",
+                len(subscription.servers),
+                subscription.url,
+            )
+            return subscription, response_text.splitlines()
+
+    def _parse_server_urls(self, subscription_content: list[str]) -> set[Server]:
+        subscription_urls = (
+            sub for sub in subscription_content if sub.startswith("https://")
+        )
+        return {self.server_parser.parse_url(url) for url in subscription_urls}

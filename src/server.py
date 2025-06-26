@@ -1,9 +1,8 @@
 import logging
 from collections.abc import Generator, Iterable, Iterator
 from dataclasses import dataclass, field
-from enum import Enum
 from itertools import islice
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 from urllib.parse import parse_qs, urlparse
 
 if TYPE_CHECKING:
@@ -12,21 +11,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class Protocols(Enum):
-    VLESS = "vless"
-
-
-@dataclass
-class ConnectionDetails:
-    protocol: Protocols
-    address: str
-    port: int
-    raw_link: str = field(repr=False)
-
-
-@dataclass
-class OutboundParams:
-    user_id: str
+@dataclass(frozen=True, slots=True)
+class VlessParams:
     sni: str = ""
     pbk: str = ""
     security: str = "none"
@@ -41,43 +27,75 @@ class OutboundParams:
 
 
 @dataclass
+class ResponseTime:
+    connection: float = 999.0
+    http: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class Server:
-    connection_details: ConnectionDetails
-    params: OutboundParams = field(repr=False)
-    response_time: dict = field(default_factory=dict)
+    protocol: str
+    address: str
+    port: int
+    username: str
+    params: VlessParams = field(repr=False)
+    raw_url: str = field(repr=False)
+    response_time: ResponseTime = field(default_factory=ResponseTime, init=False)
     parent_url: str = field(default="", repr=False)
-    connection_time: float = 999.0
 
-    @classmethod
-    def from_url(cls, url: str) -> "Server":
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.address,
+                self.port,
+                self.username,
+            ),
+        )
+
+    def __eq__(self, other: object) -> bool:
+        return bool(
+            isinstance(other, Server)
+            and self.address == other.address
+            and self.port == other.port
+            and self.username == other.username,
+        )
+
+
+class ServerParser:
+    def __init__(self) -> None:
+        self.parser_map: dict[str, Callable[[str], VlessParams]] = {
+            "vless": self.parse_vless_params,
+        }
+
+    def parse_url(self, url: str) -> Server:
         parsed = urlparse(url)
-
         if not (parsed.scheme and parsed.hostname and parsed.port):
             msg = f"Error parsing link: {url}"
             logger.error(msg)
             raise ValueError(msg)
-
         try:
-            protocol = Protocols(parsed.scheme)
-        except ValueError:
-            msg = f"Unsupported protocol in link: {url}"
+            params = self.parser_map[parsed.scheme](parsed.query)
+        except KeyError:
+            msg = "Unsupported protocol in link: {url}"
             logger.error(msg)  # noqa: TRY400
-            raise
+            raise ValueError(msg)  # noqa: B904
+        else:
+            connection_data = {
+                "protocol": parsed.scheme,
+                "address": str(parsed.hostname),
+                "port": parsed.port,
+                "username": parsed.username or "",
+                "params": params,
+            }
+            return Server(**connection_data, raw_url=url)
 
-        conn_detail = ConnectionDetails(
-            protocol=protocol,
-            address=str(parsed.hostname),
-            port=parsed.port,
-            raw_link=url,
-        )
-
-        query = parse_qs(parsed.query)
+    def parse_vless_params(self, raw_params: str) -> VlessParams:
+        query = parse_qs(raw_params)
 
         def get_param(key: str) -> str:
             return query.get(key, [""])[0]
 
-        params = OutboundParams(
-            user_id=parsed.username or "",
+        return VlessParams(
             sni=get_param("sni"),
             pbk=get_param("pbk"),
             security=get_param("security") or "none",
@@ -89,30 +107,6 @@ class Server:
             alpn=query.get("alpn"),
             sid=get_param("sid"),
             flow=get_param("flow"),
-        )
-
-        return cls(
-            connection_details=conn_detail,
-            params=params,
-            response_time={},
-            parent_url=url,
-        )
-
-    def __hash__(self) -> int:
-        return hash(
-            (
-                self.connection_details.address,
-                self.connection_details.port,
-                self.params.user_id,
-            ),
-        )
-
-    def __eq__(self, other: object) -> bool:
-        return bool(
-            isinstance(other, Server)
-            and self.connection_details.address == other.connection_details.address
-            and self.connection_details.port == other.connection_details.port
-            and self.params.user_id == other.params.user_id,
         )
 
 
@@ -131,7 +125,7 @@ class ServerManager:
                 s
                 for sub in subscriptions
                 for s in sub.servers
-                if s.connection_details.port == 443  # noqa: PLR2004
+                if s.port == 443  # noqa: PLR2004
             }
         else:
             self.servers = {s for sub in subscriptions for s in sub.servers}
@@ -140,7 +134,7 @@ class ServerManager:
         self,
         server_amount: int = 0,
     ) -> Iterator[Server]:
-        sorted_servers = sorted(self.servers, key=lambda s: s.connection_time)
+        sorted_servers = sorted(self.servers, key=lambda s: s.response_time.connection)
         if server_amount == 0:
             return iter(sorted_servers)
         return islice(sorted_servers, server_amount)
@@ -151,7 +145,7 @@ class ServerManager:
     ) -> Iterator[Server]:
         sorted_servers = sorted(
             self.servers,
-            key=lambda s: sum(s.response_time.values()),
+            key=lambda s: sum(s.response_time.http.values()),
         )
         if server_amount == 0:
             return iter(sorted_servers)

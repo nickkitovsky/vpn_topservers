@@ -5,10 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "googleapis-common-protos>=1.70.0",
+    "grpcio-tools>=1.73.0",
     "httpx[socks]>=0.28.1",
+    "protobuf>=6.31.1",
     "psutil>=7.0.0",
     "pydantic-settings>=2.9.1",
-    "xcapi>=24.11.21",
 ]
 
 [dependency-groups]

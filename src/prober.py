@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 from src.server import Server
-from src.xray import XrayApi
+from xray.api import XrayApi
 
 logger = logging.getLogger(__name__)
 

@@ -15,3 +15,4 @@ debug_notebook.ipynb
 /src/bk*.py
 /src/bk_
 bk_
+tmp_files
