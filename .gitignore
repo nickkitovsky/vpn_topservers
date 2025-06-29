@@ -5,7 +5,8 @@ build/
 dist/
 wheels/
 *.egg-info
-.vscode
+.vscode/
+
 # Virtual environments
 .venv
 /logs
@@ -17,3 +18,4 @@ debug_notebook.ipynb
 bk_
 tmp_files
 subscriptions.txt
+.vscode/settings.json
