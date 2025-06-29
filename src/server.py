@@ -1,14 +1,17 @@
+import asyncio
+import contextlib
 import logging
+import time
 from collections.abc import Generator, Iterable, Iterator
 from itertools import islice
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, cast
 from urllib.parse import parse_qs, urlparse
 
 from src.models import Server, VlessParams
 
 if TYPE_CHECKING:
     from src.models import Subscription
-
+DONT_ALIVE_CONNECTION_TIME = 999.0
 logger = logging.getLogger(__name__)
 
 
@@ -73,6 +76,52 @@ class ServerParser:
         )
 
 
+class ServerProber:
+    def __init__(
+        self,
+        timeout: int = 1,
+        max_concurrent: int = 50,
+    ) -> None:
+        self.timeout = timeout
+        self._semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def probe(self, servers: Iterable[Server]) -> None:
+        server_tasks = [
+            self._get_connection_time(
+                server.address,
+                server.port,
+            )
+            for server in servers
+        ]
+        connection_times = await asyncio.gather(*server_tasks)
+
+        for server, conn_time in zip(servers, connection_times):
+            server.response_time.connection = cast(
+                "float",
+                conn_time or DONT_ALIVE_CONNECTION_TIME,
+            )
+
+    async def _get_connection_time(
+        self,
+        address: str,
+        port: int,
+        timeout: float = 1.0,
+    ) -> float | None:
+        async with self._semaphore:
+            start_time = time.time()
+            with contextlib.suppress(asyncio.TimeoutError, OSError):
+                _, writer = await asyncio.wait_for(
+                    asyncio.open_connection(
+                        address,
+                        port,
+                    ),
+                    timeout=timeout,
+                )
+                writer.close()
+                await writer.wait_closed()
+                return round(time.time() - start_time, 3)
+
+
 class ServerManager:
     def __init__(self):
         self.servers = set()
@@ -113,8 +162,33 @@ class ServerManager:
             len(self.servers),
         )
 
+    def add_from_subscriptions(self, subscriptions: Iterable["Subscription"]) -> None:
+        for subscription in subscriptions:
+            self.add_from_subscription(subscription)
+
+    async def filter_alive_servers(
+        self,
+        timeout: int = 1,
+        max_concurrent: int = 50,
+    ) -> None:
+        prober = ServerProber(timeout=timeout, max_concurrent=max_concurrent)
+        logger.info("Filtering alive servers...")
+        await prober.probe(self.servers)
+        servers_count = len(self.servers)
+        self.servers = {
+            server
+            for server in self.servers
+            if server.response_time.connection < DONT_ALIVE_CONNECTION_TIME
+        }
+        logger.info(
+            "Filtered %d servers out of %d.",
+            servers_count - len(self.servers),
+            servers_count,
+        )
+
     def fastest_connention_time_servers(
-        self, server_amount: int = 0
+        self,
+        server_amount: int = 0,
     ) -> Iterator[Server]:
         logger.debug(
             "Getting %s fastest servers by connection time.",
@@ -126,7 +200,8 @@ class ServerManager:
         return islice(sorted_servers, server_amount)
 
     def fastest_http_response_time_servers(
-        self, server_amount: int = 0
+        self,
+        server_amount: int = 0,
     ) -> Iterator[Server]:
         logger.debug(
             "Getting %s fastest servers by HTTP response time.",

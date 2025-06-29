@@ -13,54 +13,11 @@ logger = logging.getLogger(__name__)
 
 
 API_URL = "127.0.0.1:8080"
-DONT_ALIVE_CONNECTION_TIME = 999.0
+
 DEFAULT_URLS = (
     "http://cp.cloudflare.com/",
     "https://www.google.com/gen_204",
 )
-
-
-class ConnectionProber:
-    def __init__(
-        self,
-        timeout: int = 1,
-        max_concurrent: int = 50,
-    ) -> None:
-        self.timeout = timeout
-        self._semaphore = asyncio.Semaphore(max_concurrent)
-
-    async def probe(self, servers: Iterable[Server]) -> None:
-        server_tasks = [
-            self._get_connection_time(
-                server.connection_details.address,
-                server.connection_details.port,
-            )
-            for server in servers
-        ]
-        connection_times = await asyncio.gather(*server_tasks)
-
-        for server, conn_time in zip(servers, connection_times):
-            server.connection_time = conn_time or DONT_ALIVE_CONNECTION_TIME
-
-    async def _get_connection_time(
-        self,
-        address: str,
-        port: int,
-        timeout: float = 1.0,
-    ) -> float | None:
-        async with self._semaphore:
-            start_time = time.time()
-            with contextlib.suppress(asyncio.TimeoutError, OSError):
-                _, writer = await asyncio.wait_for(
-                    asyncio.open_connection(
-                        address,
-                        port,
-                    ),
-                    timeout=timeout,
-                )
-                writer.close()
-                await writer.wait_closed()
-                return round(time.time() - start_time, 3)
 
 
 class HttpProbber:
