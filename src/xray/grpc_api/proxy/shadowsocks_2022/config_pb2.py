@@ -22,9 +22,9 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
-from common.net import network_pb2 as common_dot_net_dot_network__pb2
-from common.net import address_pb2 as common_dot_net_dot_address__pb2
-from common.protocol import user_pb2 as common_dot_protocol_dot_user__pb2
+from grpc_api.common.net import network_pb2 as common_dot_net_dot_network__pb2
+from grpc_api.common.net import address_pb2 as common_dot_net_dot_address__pb2
+from grpc_api.common.protocol import user_pb2 as common_dot_protocol_dot_user__pb2
 
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n#proxy/shadowsocks_2022/config.proto\x12\x1bxray.proxy.shadowsocks_2022\x1a\x18\x63ommon/net/network.proto\x1a\x18\x63ommon/net/address.proto\x1a\x1a\x63ommon/protocol/user.proto\"t\n\x0cServerConfig\x12\x0e\n\x06method\x18\x01 \x01(\t\x12\x0b\n\x03key\x18\x02 \x01(\t\x12\r\n\x05\x65mail\x18\x03 \x01(\t\x12\r\n\x05level\x18\x04 \x01(\x05\x12)\n\x07network\x18\x05 \x03(\x0e\x32\x18.xray.common.net.Network\"\x8a\x01\n\x15MultiUserServerConfig\x12\x0e\n\x06method\x18\x01 \x01(\t\x12\x0b\n\x03key\x18\x02 \x01(\t\x12)\n\x05users\x18\x03 \x03(\x0b\x32\x1a.xray.common.protocol.User\x12)\n\x07network\x18\x04 \x03(\x0e\x32\x18.xray.common.net.Network\"y\n\x10RelayDestination\x12\x0b\n\x03key\x18\x01 \x01(\t\x12,\n\x07\x61\x64\x64ress\x18\x02 \x01(\x0b\x32\x1b.xray.common.net.IPOrDomain\x12\x0c\n\x04port\x18\x03 \x01(\r\x12\r\n\x05\x65mail\x18\x04 \x01(\t\x12\r\n\x05level\x18\x05 \x01(\x05\"\xa0\x01\n\x11RelayServerConfig\x12\x0e\n\x06method\x18\x01 \x01(\t\x12\x0b\n\x03key\x18\x02 \x01(\t\x12\x43\n\x0c\x64\x65stinations\x18\x03 \x03(\x0b\x32-.xray.proxy.shadowsocks_2022.RelayDestination\x12)\n\x07network\x18\x04 \x03(\x0e\x32\x18.xray.common.net.Network\"\x16\n\x07\x41\x63\x63ount\x12\x0b\n\x03key\x18\x01 \x01(\t\"\x9b\x01\n\x0c\x43lientConfig\x12,\n\x07\x61\x64\x64ress\x18\x01 \x01(\x0b\x32\x1b.xray.common.net.IPOrDomain\x12\x0c\n\x04port\x18\x02 \x01(\r\x12\x0e\n\x06method\x18\x03 \x01(\t\x12\x0b\n\x03key\x18\x04 \x01(\t\x12\x14\n\x0cudp_over_tcp\x18\x05 \x01(\x08\x12\x1c\n\x14udp_over_tcp_version\x18\x06 \x01(\rBr\n\x1f\x63om.xray.proxy.shadowsocks_2022P\x01Z0github.com/xtls/xray-core/proxy/shadowsocks_2022\xaa\x02\x1aXray.Proxy.Shadowsocks2022b\x06proto3')

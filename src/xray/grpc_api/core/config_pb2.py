@@ -22,7 +22,7 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
-from common.serial import typed_message_pb2 as common_dot_serial_dot_typed__message__pb2
+from grpc_api.common.serial import typed_message_pb2 as common_dot_serial_dot_typed__message__pb2
 
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11\x63ore/config.proto\x12\txray.core\x1a!common/serial/typed_message.proto\"\xd8\x01\n\x06\x43onfig\x12\x30\n\x07inbound\x18\x01 \x03(\x0b\x32\x1f.xray.core.InboundHandlerConfig\x12\x32\n\x08outbound\x18\x02 \x03(\x0b\x32 .xray.core.OutboundHandlerConfig\x12-\n\x03\x61pp\x18\x04 \x03(\x0b\x32 .xray.common.serial.TypedMessage\x12\x33\n\textension\x18\x06 \x03(\x0b\x32 .xray.common.serial.TypedMessageJ\x04\x08\x03\x10\x04\"\x9a\x01\n\x14InboundHandlerConfig\x12\x0b\n\x03tag\x18\x01 \x01(\t\x12;\n\x11receiver_settings\x18\x02 \x01(\x0b\x32 .xray.common.serial.TypedMessage\x12\x38\n\x0eproxy_settings\x18\x03 \x01(\x0b\x32 .xray.common.serial.TypedMessage\"\xba\x01\n\x15OutboundHandlerConfig\x12\x0b\n\x03tag\x18\x01 \x01(\t\x12\x39\n\x0fsender_settings\x18\x02 \x01(\x0b\x32 .xray.common.serial.TypedMessage\x12\x38\n\x0eproxy_settings\x18\x03 \x01(\x0b\x32 .xray.common.serial.TypedMessage\x12\x0e\n\x06\x65xpire\x18\x04 \x01(\x03\x12\x0f\n\x07\x63omment\x18\x05 \x01(\tB=\n\rcom.xray.coreP\x01Z\x1egithub.com/xtls/xray-core/core\xaa\x02\tXray.Coreb\x06proto3')

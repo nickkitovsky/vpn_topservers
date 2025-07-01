@@ -22,7 +22,7 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
-from common.net import destination_pb2 as common_dot_net_dot_destination__pb2
+from grpc_api.common.net import destination_pb2 as common_dot_net_dot_destination__pb2
 
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16proxy/dns/config.proto\x12\x0exray.proxy.dns\x1a\x1c\x63ommon/net/destination.proto\"r\n\x06\x43onfig\x12)\n\x06server\x18\x01 \x01(\x0b\x32\x19.xray.common.net.Endpoint\x12\x12\n\nuser_level\x18\x02 \x01(\r\x12\x14\n\x0cnon_IP_query\x18\x03 \x01(\t\x12\x13\n\x0b\x62lock_types\x18\x04 \x03(\x05\x42L\n\x12\x63om.xray.proxy.dnsP\x01Z#github.com/xtls/xray-core/proxy/dns\xaa\x02\x0eXray.Proxy.Dnsb\x06proto3')

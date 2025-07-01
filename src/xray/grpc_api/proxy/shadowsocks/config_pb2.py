@@ -22,9 +22,9 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
-from common.net import network_pb2 as common_dot_net_dot_network__pb2
-from common.protocol import user_pb2 as common_dot_protocol_dot_user__pb2
-from common.protocol import server_spec_pb2 as common_dot_protocol_dot_server__spec__pb2
+from grpc_api.common.net import network_pb2 as common_dot_net_dot_network__pb2
+from grpc_api.common.protocol import user_pb2 as common_dot_protocol_dot_user__pb2
+from grpc_api.common.protocol import server_spec_pb2 as common_dot_protocol_dot_server__spec__pb2
 
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1eproxy/shadowsocks/config.proto\x12\x16xray.proxy.shadowsocks\x1a\x18\x63ommon/net/network.proto\x1a\x1a\x63ommon/protocol/user.proto\x1a!common/protocol/server_spec.proto\"f\n\x07\x41\x63\x63ount\x12\x10\n\x08password\x18\x01 \x01(\t\x12\x37\n\x0b\x63ipher_type\x18\x02 \x01(\x0e\x32\".xray.proxy.shadowsocks.CipherType\x12\x10\n\x08iv_check\x18\x03 \x01(\x08\"d\n\x0cServerConfig\x12)\n\x05users\x18\x01 \x03(\x0b\x32\x1a.xray.common.protocol.User\x12)\n\x07network\x18\x02 \x03(\x0e\x32\x18.xray.common.net.Network\"D\n\x0c\x43lientConfig\x12\x34\n\x06server\x18\x01 \x03(\x0b\x32$.xray.common.protocol.ServerEndpoint*t\n\nCipherType\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x0f\n\x0b\x41\x45S_128_GCM\x10\x05\x12\x0f\n\x0b\x41\x45S_256_GCM\x10\x06\x12\x15\n\x11\x43HACHA20_POLY1305\x10\x07\x12\x16\n\x12XCHACHA20_POLY1305\x10\x08\x12\x08\n\x04NONE\x10\tBd\n\x1a\x63om.xray.proxy.shadowsocksP\x01Z+github.com/xtls/xray-core/proxy/shadowsocks\xaa\x02\x16Xray.Proxy.Shadowsocksb\x06proto3')

@@ -22,8 +22,8 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
-from common.net import address_pb2 as common_dot_net_dot_address__pb2
-from common.net import network_pb2 as common_dot_net_dot_network__pb2
+from grpc_api.common.net import address_pb2 as common_dot_net_dot_address__pb2
+from grpc_api.common.net import network_pb2 as common_dot_net_dot_network__pb2
 
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1bproxy/dokodemo/config.proto\x12\x13xray.proxy.dokodemo\x1a\x18\x63ommon/net/address.proto\x1a\x18\x63ommon/net/network.proto\"\x9d\x01\n\x06\x43onfig\x12,\n\x07\x61\x64\x64ress\x18\x01 \x01(\x0b\x32\x1b.xray.common.net.IPOrDomain\x12\x0c\n\x04port\x18\x02 \x01(\r\x12*\n\x08networks\x18\x07 \x03(\x0e\x32\x18.xray.common.net.Network\x12\x17\n\x0f\x66ollow_redirect\x18\x05 \x01(\x08\x12\x12\n\nuser_level\x18\x06 \x01(\rB[\n\x17\x63om.xray.proxy.dokodemoP\x01Z(github.com/xtls/xray-core/proxy/dokodemo\xaa\x02\x13Xray.Proxy.Dokodemob\x06proto3')

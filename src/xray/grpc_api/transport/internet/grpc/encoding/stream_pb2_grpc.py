@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from transport.internet.grpc.encoding import stream_pb2 as transport_dot_internet_dot_grpc_dot_encoding_dot_stream__pb2
+from grpc_api.transport.internet.grpc.encoding import stream_pb2 as transport_dot_internet_dot_grpc_dot_encoding_dot_stream__pb2
 
 GRPC_GENERATED_VERSION = '1.73.0'
 GRPC_VERSION = grpc.__version__

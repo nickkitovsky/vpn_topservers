@@ -2,30 +2,32 @@ import asyncio
 import contextlib
 import logging
 import time
+import typing
 from collections.abc import Generator, Iterable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
-from src.server import Server
-from xray.api import XrayApi
+from src.xray.api import XrayApi
 
+if typing.TYPE_CHECKING:
+    from src.server import Server
 logger = logging.getLogger(__name__)
 
 
 API_URL = "127.0.0.1:8080"
 
 DEFAULT_URLS = (
-    "http://cp.cloudflare.com/",
-    "https://www.google.com/gen_204",
+    "https://openai.com/policies/",
+    "https://privacycenter.instagram.com/images/assets_DO_NOT_HARDCODE/company_brand_privacy_center_policy/Privacy-2022-CompanyBrand-56A-Mobile.png",
 )
 
 
 class HttpProbber:
     def __init__(
         self,
-        max_concurent_requests: int = 100,
+        max_concurent_requests: int = 50,
         max_concurent_servers: int = 25,
-        timeout: int = 5,
+        timeout: int = 8,
         api_url: str = API_URL,
         start_inbound_port: int = 60000,
     ) -> None:
@@ -34,29 +36,30 @@ class HttpProbber:
         self.max_concurent_requests = max_concurent_requests
         self.max_concurent_servers = max_concurent_servers
         self._xray_api = XrayApi(api_url)
-        self.setup_pool()
 
     async def probe(
         self,
-        servers: list[Server],
+        servers: Iterable["Server"],
         urls: Sequence[str] | None = None,
     ) -> None:
         if not urls:
             urls = DEFAULT_URLS
-        with self.outbound_pool(servers):
-            await self._check_all_servers(servers, urls)
+        server_chunks = self._chunk_servers_iter(servers, self.max_concurent_servers)
+        for chunk in server_chunks:
+            with self.outbound_pool(chunk):
+                await self._check_all_servers(chunk, urls)
         logger.info("Finished probing all servers.")
 
     @contextlib.contextmanager
     def outbound_pool(
         self,
-        servers: list[Server],
+        servers: Iterable["Server"],
     ) -> Generator[None, Any, None]:
         for num, server in enumerate(servers):
             logger.debug(
                 "Adding outbound %s for server %s",
                 f"outbound{num}",
-                server.connection_details.address,
+                server.address,
             )
             # TODO: FIX ANY API ERROR
             try:
@@ -64,13 +67,28 @@ class HttpProbber:
             except Exception:  # noqa: BLE001
                 logger.error(  # noqa: TRY400
                     "Error adding outbound %s for server %s",
-                    f"outbound{num}",
-                    server.connection_details,
+                    num,
+                    server.address,
                 )
         yield
         for num, _ in enumerate(servers):
             logger.debug("Removing outbound %s", f"outbound{num}")
             self._xray_api.remove_outbound(f"outbound{num}")
+
+    def _chunk_servers_iter(
+        self,
+        servers: Iterable["Server"],
+        chunk_size: int,
+    ) -> Generator[list["Server"], Any, None]:
+        logger.debug("Chunking servers into chunks of size %d.", chunk_size)
+        chunk = []
+        for server in servers:
+            chunk.append(server)
+            if len(chunk) == chunk_size:
+                yield chunk
+                chunk = []
+        if chunk:
+            yield chunk
 
     async def _get_url_response_time(
         self,
@@ -96,7 +114,7 @@ class HttpProbber:
 
     async def _check_server(
         self,
-        server: Server,
+        server: "Server",
         proxy_number: int,
         urls: Sequence[str],
         semaphore: asyncio.Semaphore,
@@ -107,22 +125,22 @@ class HttpProbber:
             logger.debug(
                 "Using proxy on port %d for server %s",
                 self.start_inbound_port + proxy_number,
-                server.connection_details.address,
+                server.address,
             )
             results = await asyncio.gather(
                 *[self._get_url_response_time(client, url, semaphore) for url in urls],
             )
-            server.response_time.update(dict(zip(urls, results)))
+            server.response_time.http.update(dict(zip(urls, results)))
 
     async def _check_all_servers(
         self,
-        servers: Iterable[Server],
+        servers: Iterable["Server"],
         urls: Sequence[str],
     ) -> None:
         semaphore = asyncio.Semaphore(self.max_concurent_requests)
         logger.debug(
             "Checking servers %s for URLs %s",
-            [s.connection_details.address for s in servers],
+            [s.address for s in servers],
             urls,
         )
         await asyncio.gather(

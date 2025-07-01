@@ -7,6 +7,7 @@ from itertools import islice
 from typing import TYPE_CHECKING, Any, Callable, cast
 from urllib.parse import parse_qs, urlparse
 
+from src.http_prober import HttpProbber
 from src.models import Server, VlessParams
 
 if TYPE_CHECKING:
@@ -186,6 +187,11 @@ class ServerManager:
             servers_count,
         )
 
+    async def http_probe(self, servers: Iterable[Server]) -> None:
+        http_prober = HttpProbber()
+        http_prober.setup_pool()
+        await http_prober.probe(servers)
+
     def fastest_connention_time_servers(
         self,
         server_amount: int = 0,
@@ -215,17 +221,17 @@ class ServerManager:
             return iter(sorted_servers)
         return islice(sorted_servers, server_amount)
 
-    def chunk_servers_iter(
-        self,
-        servers: Iterable[Server],
-        chunk_size: int,
-    ) -> Generator[list[Server], Any, None]:
-        logger.debug("Chunking servers into chunks of size %d.", chunk_size)
-        chunk = []
-        for server in servers:
-            chunk.append(server)
-            if len(chunk) == chunk_size:
-                yield chunk
-                chunk = []
-        if chunk:
-            yield chunk
+    # def chunk_servers_iter(
+    #     self,
+    #     servers: Iterable[Server],
+    #     chunk_size: int,
+    # ) -> Generator[list[Server], Any, None]:
+    #     logger.debug("Chunking servers into chunks of size %d.", chunk_size)
+    #     chunk = []
+    #     for server in servers:
+    #         chunk.append(server)
+    #         if len(chunk) == chunk_size:
+    #             yield chunk
+    #             chunk = []
+    #     if chunk:
+    #         yield chunk

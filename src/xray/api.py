@@ -1,47 +1,50 @@
 import base64
 import logging
+import os
 import pathlib
 import sys
 import time
 from ipaddress import ip_address
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from grpc import Channel, insecure_channel
 
 # Add the 'api' directory to Python path to resolve protobuf imports
-sys.path.insert(0, str(pathlib.Path(__file__).parent / "grpc_api"))
-from grpc_api.app.proxyman.command.command_pb2 import (
+# sys.path.append(str(pathlib.Path(__file__).parent.resolve()))
+if TYPE_CHECKING:
+    from src.server import Server, VlessParams
+
+from .grpc_api.app.proxyman.command.command_pb2 import (
     AddInboundRequest,
     AddOutboundRequest,
     RemoveOutboundRequest,
 )
-from grpc_api.app.proxyman.command.command_pb2_grpc import HandlerServiceStub
-from grpc_api.app.proxyman.config_pb2 import (
+from .grpc_api.app.proxyman.command.command_pb2_grpc import HandlerServiceStub
+from .grpc_api.app.proxyman.config_pb2 import (
     MultiplexingConfig,
     ReceiverConfig,
     SenderConfig,
     SniffingConfig,
 )
-from grpc_api.app.router.command.command_pb2 import AddRuleRequest
-from grpc_api.app.router.command.command_pb2_grpc import RoutingServiceStub
-from grpc_api.app.router.config_pb2 import Config, RoutingRule
-from grpc_api.common.net.address_pb2 import IPOrDomain
-from grpc_api.common.net.network_pb2 import Network
-from grpc_api.common.net.port_pb2 import PortList, PortRange
-from grpc_api.common.protocol.server_spec_pb2 import ServerEndpoint
-from grpc_api.common.protocol.user_pb2 import User
-from grpc_api.common.serial.typed_message_pb2 import TypedMessage
-from grpc_api.core.config_pb2 import InboundHandlerConfig, OutboundHandlerConfig
-from grpc_api.proxy.http.config_pb2 import ServerConfig as HttpServerConfig
-from grpc_api.proxy.socks.config_pb2 import AuthType, ServerConfig as SocksServerConfig
-from grpc_api.proxy.vless.account_pb2 import Account as VlessAccount
-from grpc_api.proxy.vless.outbound.config_pb2 import Config as VlessOutboundConfig
-from grpc_api.transport.internet.config_pb2 import StreamConfig, TransportConfig
-from grpc_api.transport.internet.grpc.config_pb2 import Config as GrpcConfig
-from grpc_api.transport.internet.reality.config_pb2 import Config as RealityConfig
-from grpc_api.transport.internet.tls.config_pb2 import Config as TlsConfig
-from grpc_api.transport.internet.websocket.config_pb2 import Config as WebsocketConfig
-from src.server import Server, VlessParams
+from .grpc_api.app.router.command.command_pb2 import AddRuleRequest
+from .grpc_api.app.router.command.command_pb2_grpc import RoutingServiceStub
+from .grpc_api.app.router.config_pb2 import Config, RoutingRule
+from .grpc_api.common.net.address_pb2 import IPOrDomain
+from .grpc_api.common.net.network_pb2 import Network
+from .grpc_api.common.net.port_pb2 import PortList, PortRange
+from .grpc_api.common.protocol.server_spec_pb2 import ServerEndpoint
+from .grpc_api.common.protocol.user_pb2 import User
+from .grpc_api.common.serial.typed_message_pb2 import TypedMessage
+from .grpc_api.core.config_pb2 import InboundHandlerConfig, OutboundHandlerConfig
+from .grpc_api.proxy.http.config_pb2 import ServerConfig as HttpServerConfig
+from .grpc_api.proxy.socks.config_pb2 import AuthType, ServerConfig as SocksServerConfig
+from .grpc_api.proxy.vless.account_pb2 import Account as VlessAccount
+from .grpc_api.proxy.vless.outbound.config_pb2 import Config as VlessOutboundConfig
+from .grpc_api.transport.internet.config_pb2 import StreamConfig, TransportConfig
+from .grpc_api.transport.internet.grpc.config_pb2 import Config as GrpcConfig
+from .grpc_api.transport.internet.reality.config_pb2 import Config as RealityConfig
+from .grpc_api.transport.internet.tls.config_pb2 import Config as TlsConfig
+from .grpc_api.transport.internet.websocket.config_pb2 import Config as WebsocketConfig
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +57,7 @@ class XrayApi:
 
     def add_outbound_vless(
         self,
-        server: Server,
+        server: "Server",
         tag: str = "outbound",
     ) -> None:
         address = self._parse_address(server.address)
@@ -191,7 +194,7 @@ class XrayApi:
             logger.error(msg)  # noqa: TRY400
             raise ValueError(msg) from e
 
-    def _create_stream_settings(self, params: VlessParams) -> StreamConfig:
+    def _create_stream_settings(self, params: "VlessParams") -> StreamConfig:
         ts = []
         if params.type == "ws":
             ts.append(

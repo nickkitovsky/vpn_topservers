@@ -22,7 +22,7 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
-from common.serial import typed_message_pb2 as common_dot_serial_dot_typed__message__pb2
+from grpc_api.common.serial import typed_message_pb2 as common_dot_serial_dot_typed__message__pb2
 
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1cproxy/blackhole/config.proto\x12\x14xray.proxy.blackhole\x1a!common/serial/typed_message.proto\"\x0e\n\x0cNoneResponse\"\x0e\n\x0cHTTPResponse\"<\n\x06\x43onfig\x12\x32\n\x08response\x18\x01 \x01(\x0b\x32 .xray.common.serial.TypedMessageB^\n\x18\x63om.xray.proxy.blackholeP\x01Z)github.com/xtls/xray-core/proxy/blackhole\xaa\x02\x14Xray.Proxy.Blackholeb\x06proto3')
