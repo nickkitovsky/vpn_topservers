@@ -17,8 +17,9 @@ class VlessParams:
 
 
 @dataclass
-class ResponseTime:
+class Responses:
     connection: float = 999.0
+    http_avaibility: float = 0
     http: dict[str, float] = field(default_factory=dict)
 
 
@@ -30,7 +31,7 @@ class Server:
     username: str
     params: VlessParams = field(repr=False)
     raw_url: str = field(repr=False)
-    response_time: ResponseTime = field(default_factory=ResponseTime, init=False)
+    response_time: Responses = field(default_factory=Responses, init=False)
     from_subscription: str = field(default="", repr=False)
 
     def __hash__(self) -> int:

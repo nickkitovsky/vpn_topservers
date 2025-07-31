@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 from src.xray.api import XrayApi
+from src.xray.controller import XrayProcessHandler
 
 if typing.TYPE_CHECKING:
     from src.server import Server
@@ -27,7 +28,7 @@ class HttpProbber:
         self,
         max_concurent_requests: int = 50,
         max_concurent_servers: int = 25,
-        timeout: int = 8,
+        timeout: int = 10,
         api_url: str = API_URL,
         start_inbound_port: int = 60000,
     ) -> None:
@@ -35,7 +36,8 @@ class HttpProbber:
         self.start_inbound_port = start_inbound_port
         self.max_concurent_requests = max_concurent_requests
         self.max_concurent_servers = max_concurent_servers
-        self._xray_api = XrayApi(api_url)
+        self._api = XrayApi(api_url)
+        self._controller = XrayProcessHandler()
 
     async def probe(
         self,
@@ -45,10 +47,16 @@ class HttpProbber:
         if not urls:
             urls = DEFAULT_URLS
         server_chunks = self._chunk_servers_iter(servers, self.max_concurent_servers)
+        self._controller.run()
+        logger.debug("Xray started.")
+        self.setup_pool()
+        logger.debug("Inbound servers pool created.")
         for chunk in server_chunks:
             with self.outbound_pool(chunk):
                 await self._check_all_servers(chunk, urls)
         logger.info("Finished probing all servers.")
+        logger.debug("Xray stopped.")
+        self._controller.stop()
 
     @contextlib.contextmanager
     def outbound_pool(
@@ -63,7 +71,7 @@ class HttpProbber:
             )
             # TODO: FIX ANY API ERROR
             try:
-                self._xray_api.add_outbound_vless(server, f"outbound{num}")
+                self._api._add_outbound_vless(server, f"outbound{num}")
             except Exception:  # noqa: BLE001
                 logger.error(  # noqa: TRY400
                     "Error adding outbound %s for server %s",
@@ -73,7 +81,7 @@ class HttpProbber:
         yield
         for num, _ in enumerate(servers):
             logger.debug("Removing outbound %s", f"outbound{num}")
-            self._xray_api.remove_outbound(f"outbound{num}")
+            self._api.remove_outbound(f"outbound{num}")
 
     def _chunk_servers_iter(
         self,
@@ -152,8 +160,8 @@ class HttpProbber:
 
     def setup_pool(self) -> None:
         for i in range(self.max_concurent_servers):
-            self._xray_api.add_inbound_socks(
+            self._api.add_inbound_socks(
                 self.start_inbound_port + i,
                 f"inbound{i}",
             )
-            self._xray_api.add_routing_rule(f"inbound{i}", f"outbound{i}", f"rule{i}")
+            self._api.add_routing_rule(f"inbound{i}", f"outbound{i}", f"rule{i}")

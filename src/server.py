@@ -106,7 +106,6 @@ class ServerProber:
         self,
         address: str,
         port: int,
-        timeout: float = 1.0,
     ) -> float | None:
         async with self._semaphore:
             start_time = time.time()
@@ -116,7 +115,7 @@ class ServerProber:
                         address,
                         port,
                     ),
-                    timeout=timeout,
+                    timeout=self.timeout,
                 )
                 writer.close()
                 await writer.wait_closed()
@@ -189,7 +188,6 @@ class ServerManager:
 
     async def http_probe(self, servers: Iterable[Server]) -> None:
         http_prober = HttpProbber()
-        http_prober.setup_pool()
         await http_prober.probe(servers)
 
     def fastest_connention_time_servers(

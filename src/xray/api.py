@@ -1,16 +1,18 @@
 import base64
+import contextlib
 import logging
-import os
 import pathlib
 import sys
 import time
+from collections.abc import Generator, Iterable
 from ipaddress import ip_address
 from typing import TYPE_CHECKING, Any
 
+import psutil
 from grpc import Channel, insecure_channel
 
-# Add the 'api' directory to Python path to resolve protobuf imports
-# sys.path.append(str(pathlib.Path(__file__).parent.resolve()))
+# Add the 'grpc_api' directory to Python path to resolve protobuf imports
+sys.path.append(str(pathlib.Path(__file__).parent.resolve()))
 if TYPE_CHECKING:
     from src.server import Server, VlessParams
 
@@ -48,52 +50,20 @@ from .grpc_api.transport.internet.websocket.config_pb2 import Config as Websocke
 
 logger = logging.getLogger(__name__)
 
+XRAY_DIR = pathlib.Path(__file__).resolve().parent.parent / "xray"
+BINARY_FILE = "xray"
+
 
 class XrayApi:
     def __init__(self, api_url: str = "127.0.0.1:8080") -> None:
         channel: Channel = insecure_channel(api_url)
+        self._handler_proc = XrayProcessHandler()
         self._handler_stub = HandlerServiceStub(channel)
         self._route_stub: RoutingServiceStub = RoutingServiceStub(channel)
 
-    def add_outbound_vless(
-        self,
-        server: "Server",
-        tag: str = "outbound",
-    ) -> None:
-        address = self._parse_address(server.address)
-        proxy = VlessOutboundConfig(
-            vnext=[
-                ServerEndpoint(
-                    address=address,
-                    port=server.port,
-                    user=[
-                        User(
-                            level=0,
-                            account=self._to_typed_message(
-                                VlessAccount(
-                                    id=server.username,
-                                    encryption="none",
-                                    flow=server.params.flow,
-                                ),
-                            ),
-                        ),
-                    ],
-                ),
-            ],
-        )
-
-        outbound = OutboundHandlerConfig(
-            tag=tag,
-            proxy_settings=self._to_typed_message(proxy),
-            sender_settings=self._to_typed_message(
-                SenderConfig(
-                    stream_settings=self._create_stream_settings(server.params),
-                    multiplex_settings=MultiplexingConfig(enabled=False),
-                ),
-            ),
-        )
-        self._handler_stub.AddOutbound(AddOutboundRequest(outbound=outbound))
-        logger.info("Added outbound %s", tag)
+    def add_outbound(self, server: "Server", tag: str = "outbound") -> None:
+        if server.protocol.lower() == "vless":
+            self._add_outbound_vless(server, tag)
 
     def add_inbound_socks(self, port: int, tag: str = "inbound") -> None:
         inbound = InboundHandlerConfig(
@@ -182,6 +152,84 @@ class XrayApi:
         self._handler_stub.RemoveOutbound(RemoveOutboundRequest(tag=tag))
         logger.info("Removed outbound %s", tag)
 
+    def add_inbound_pool(self, pool_size: int = 50, start_port: int = 60000) -> None:
+        for i in range(pool_size):
+            self.add_inbound_socks(start_port + i, f"inbound{i}")
+            self.add_routing_rule(f"inbound{i}", f"outbound{i}", f"rule{i}")
+        logger.info(
+            "Inbound servers pool created (%d servers). first port:%d",
+            pool_size,
+            start_port,
+        )
+
+    @contextlib.contextmanager
+    def outbound_pool(
+        self,
+        servers: Iterable["Server"],
+    ) -> Generator[None, Any, None]:
+        if not self._handler_proc.is_running():
+            self._handler_proc.run()
+            self.add_inbound_pool()
+        for num, server in enumerate(servers):
+            logger.debug(
+                "Adding outbound %s for server %s",
+                f"outbound{num}",
+                server.address,
+            )
+            # TODO: FIX ANY API ERROR
+            try:
+                self.add_outbound(server, f"outbound{num}")
+            except Exception:  # noqa: BLE001
+                logger.error(  # noqa: TRY400
+                    "Error adding outbound %s for server %s",
+                    num,
+                    server.address,
+                )
+        yield
+        for num, _ in enumerate(servers):
+            logger.debug("Removing outbound %s", f"outbound{num}")
+            self.remove_outbound(f"outbound{num}")
+
+    def _add_outbound_vless(
+        self,
+        server: "Server",
+        tag: str = "outbound",
+    ) -> None:
+        address = self._parse_address(server.address)
+        proxy = VlessOutboundConfig(
+            vnext=[
+                ServerEndpoint(
+                    address=address,
+                    port=server.port,
+                    user=[
+                        User(
+                            level=0,
+                            account=self._to_typed_message(
+                                VlessAccount(
+                                    id=server.username,
+                                    encryption="none",
+                                    flow=server.params.flow,
+                                ),
+                            ),
+                        ),
+                    ],
+                ),
+            ],
+        )
+
+        outbound = OutboundHandlerConfig(
+            tag=tag,
+            proxy_settings=self._to_typed_message(proxy),
+            sender_settings=self._to_typed_message(
+                SenderConfig(
+                    stream_settings=self._create_stream_settings(server.params),
+                    multiplex_settings=MultiplexingConfig(enabled=False),
+                ),
+            ),
+        )
+        self._handler_stub.AddOutbound(AddOutboundRequest(outbound=outbound))
+        logger.info("Added vless outbound %s", tag)
+
     def _parse_address(self, address: str) -> IPOrDomain:
         try:
             try:
@@ -266,3 +314,58 @@ class XrayApi:
 
     def _get_message_type(self, message: Any) -> str:  # noqa: ANN401
         return message.DESCRIPTOR.full_name
+
+
+class XrayProcessHandler:
+    def __init__(self, xray_dir: pathlib.Path = XRAY_DIR) -> None:
+        self.binary_path = xray_dir / pathlib.Path(BINARY_FILE)
+        self.process: psutil.Popen | None = None
+
+    def run(self) -> None:
+        if self.is_running():
+            logger.info("Xray is already running.")
+            return
+
+        self.process = psutil.Popen(
+            [self.binary_path],
+            cwd=str(XRAY_DIR),
+        )
+        logger.info("Started xray.exe with PID: %s", self.process.pid)
+
+    def stop(self) -> None:
+        if self.process:
+            self._terminate_process(self.process)
+        elif proc := self._find_xray_proc():
+            self._terminate_process(proc)
+        else:
+            logger.info("Xray is not running.")
+
+    def restart(self) -> None:
+        logger.info("Restarting xray.exe...")
+        self.stop()
+        self.run()
+
+    def is_running(self) -> bool:
+        return bool(self._find_xray_proc())
+
+    def _terminate_process(self, process: psutil.Process) -> None:
+        logger.info("Stopping xray.exe with PID: %s", process.info["pid"])
+        try:
+            process.terminate()
+            process.wait(timeout=5)
+        except psutil.NoSuchProcess:
+            logger.warning("Process %s already terminated.", process.info["pid"])
+        except psutil.TimeoutExpired:
+            logger.warning(
+                "Process %s did not terminate in time, killing it.",
+                process.info["pid"],
+            )
+            process.kill()  # If it doesn't terminate, force kill it.
+            process.wait(timeout=5)
+        self.process = None
+
+    def _find_xray_proc(self) -> psutil.Process | None:
+        for proc in psutil.process_iter(["pid", "name"]):
+            if proc.info["name"] == BINARY_FILE:
+                return proc
+        return None
