@@ -1,19 +1,17 @@
-import asyncio
-import contextlib
 import logging
-import time
-from collections.abc import Generator, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from itertools import islice
-from typing import TYPE_CHECKING, Any, Callable, cast
+from typing import TYPE_CHECKING, Callable
 from urllib.parse import parse_qs, urlparse
 
-from src.http_prober import HttpProbber
 from src.models import Server, VlessParams
 
 if TYPE_CHECKING:
     from src.models import Subscription
-DONT_ALIVE_CONNECTION_TIME = 999.0
+
 logger = logging.getLogger(__name__)
+
+DONT_ALIVE_CONNECTION_TIME = 999.0
 
 
 class ServerParser:
@@ -77,51 +75,6 @@ class ServerParser:
         )
 
 
-class ServerProber:
-    def __init__(
-        self,
-        timeout: int = 1,
-        max_concurrent: int = 50,
-    ) -> None:
-        self.timeout = timeout
-        self._semaphore = asyncio.Semaphore(max_concurrent)
-
-    async def probe(self, servers: Iterable[Server]) -> None:
-        server_tasks = [
-            self._get_connection_time(
-                server.address,
-                server.port,
-            )
-            for server in servers
-        ]
-        connection_times = await asyncio.gather(*server_tasks)
-
-        for server, conn_time in zip(servers, connection_times):
-            server.response_time.connection = cast(
-                "float",
-                conn_time or DONT_ALIVE_CONNECTION_TIME,
-            )
-
-    async def _get_connection_time(
-        self,
-        address: str,
-        port: int,
-    ) -> float | None:
-        async with self._semaphore:
-            start_time = time.time()
-            with contextlib.suppress(asyncio.TimeoutError, OSError):
-                _, writer = await asyncio.wait_for(
-                    asyncio.open_connection(
-                        address,
-                        port,
-                    ),
-                    timeout=self.timeout,
-                )
-                writer.close()
-                await writer.wait_closed()
-                return round(time.time() - start_time, 3)
-
-
 class ServerManager:
     def __init__(self):
         self.servers = set()
@@ -166,29 +119,13 @@ class ServerManager:
         for subscription in subscriptions:
             self.add_from_subscription(subscription)
 
-    async def filter_alive_servers(
-        self,
-        timeout: int = 1,
-        max_concurrent: int = 50,
-    ) -> None:
-        prober = ServerProber(timeout=timeout, max_concurrent=max_concurrent)
-        logger.info("Filtering alive servers...")
-        await prober.probe(self.servers)
-        servers_count = len(self.servers)
-        self.servers = {
-            server
-            for server in self.servers
-            if server.response_time.connection < DONT_ALIVE_CONNECTION_TIME
-        }
-        logger.info(
-            "Filtered %d servers out of %d.",
-            servers_count - len(self.servers),
-            servers_count,
-        )
+    async def filter_alive_servers(self, servers: Iterable[Server]) -> None:
+        # TODO: add connection probe
+        pass
 
     async def http_probe(self, servers: Iterable[Server]) -> None:
-        http_prober = HttpProbber()
-        await http_prober.probe(servers)
+        # TODO: add http probe
+        pass
 
     def fastest_connention_time_servers(
         self,
@@ -218,18 +155,3 @@ class ServerManager:
         if server_amount == 0:
             return iter(sorted_servers)
         return islice(sorted_servers, server_amount)
-
-    # def chunk_servers_iter(
-    #     self,
-    #     servers: Iterable[Server],
-    #     chunk_size: int,
-    # ) -> Generator[list[Server], Any, None]:
-    #     logger.debug("Chunking servers into chunks of size %d.", chunk_size)
-    #     chunk = []
-    #     for server in servers:
-    #         chunk.append(server)
-    #         if len(chunk) == chunk_size:
-    #             yield chunk
-    #             chunk = []
-    #     if chunk:
-    #         yield chunk
