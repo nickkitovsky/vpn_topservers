@@ -20,6 +20,10 @@ class SubscriptionManager:
             self.supported_protocols,
         )
 
+    def add_subscription(self, subscription_url: str) -> None:
+        logger.debug("Adding subscription: %s", subscription_url)
+        self.subscriptions.add(Subscription(url=subscription_url))
+
     def add_subscription_from_file(self, subscription_file: str | Path) -> None:
         logger.debug("Adding subscriptions from file: %s", subscription_file)
         if isinstance(subscription_file, str):
