@@ -19,7 +19,6 @@ class VlessParams:
 @dataclass
 class Responses:
     connection: float = 999.0
-    http_avaibility: float = 0
     http: dict[str, float] = field(default_factory=dict)
 
 

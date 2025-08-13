@@ -1,17 +1,20 @@
+import json
 import logging
+import pathlib
+from collections import defaultdict
 from collections.abc import Iterable, Iterator
 from itertools import islice
 from typing import TYPE_CHECKING, Callable
 from urllib.parse import parse_qs, urlparse
 
+from src.config import settings
 from src.models import Server, VlessParams
+from src.prober import Prober
 
 if TYPE_CHECKING:
     from src.models import Subscription
 
 logger = logging.getLogger(__name__)
-
-DONT_ALIVE_CONNECTION_TIME = 999.0
 
 
 class ServerParser:
@@ -31,6 +34,7 @@ class ServerParser:
             msg = f"Error parsing link: {url}"
             logger.error(msg)
             raise ValueError(msg)
+
         try:
             params = self.supported_protocols[parsed.scheme](parsed.query)
         except KeyError:
@@ -79,6 +83,7 @@ class ServerManager:
     def __init__(self):
         self.servers = set()
         self.parser = ServerParser()
+        self.prober = Prober()
         logger.debug("ServerManager initialized.")
 
     def add_from_subscription(
@@ -93,20 +98,17 @@ class ServerManager:
             only_443_port,
         )
         initial_server_count = len(self.servers)
-        if only_443_port:
-            servers = {
-                server
-                for server_url in subscription.servers
-                if (server := self.parser.parse_url(server_url, subscription.url)).port
-                == 443  # noqa: PLR2004
-            }
-        else:
-            servers = {
-                self.parser.parse_url(server_url, subscription.url)
-                for server_url in subscription.servers
-            }
+        for server_url in subscription.servers:
+            try:
+                server = self.parser.parse_url(server_url, subscription.url)
+            except ValueError:  # noqa: PERF203
+                continue
+            else:
+                if (only_443_port and server.port != 443) or (  # noqa: PLR2004
+                    not only_443_port and server
+                ):
+                    self.servers.add(server)
 
-        self.servers |= servers
         added_count = len(self.servers) - initial_server_count
         logger.info(
             "Added %d new servers from subscription %s. Total servers: %d",
@@ -119,13 +121,48 @@ class ServerManager:
         for subscription in subscriptions:
             self.add_from_subscription(subscription)
 
-    async def filter_alive_servers(self, servers: Iterable[Server]) -> None:
-        # TODO: add connection probe
-        pass
+    def write_servers_dump(self, dump_file_location: str | pathlib.Path) -> None:
+        dump_data = defaultdict(list)
+        if isinstance(dump_file_location, str):
+            dump_file_location = pathlib.Path(dump_file_location)
+        for server in self.servers:
+            dump_data[server.from_subscription].append(server.raw_url)
+        try:
+            with dump_file_location.open("w") as dump_file:
+                json.dump(dump_data, dump_file)
+        except OSError:
+            logger.exception("Error of write dump file: %s")
+        else:
+            logger.info("Dump file %s successfully created.", dump_file_location)
 
-    async def http_probe(self, servers: Iterable[Server]) -> None:
-        # TODO: add http probe
-        pass
+    def read_servers_dump(self, dump_file_location: str | pathlib.Path) -> None:
+        if isinstance(dump_file_location, str):
+            dump_file_location = pathlib.Path(dump_file_location)
+        try:
+            with dump_file_location.open("r") as dump_file:
+                dump_data = json.load(dump_file)
+        except OSError:
+            logger.exception("Error of read dump file: %s")
+        else:
+            for subscription_url, server_urls in dump_data.items():
+                for server_url in server_urls:
+                    self.servers.add(
+                        self.parser.parse_url(server_url, subscription_url),
+                    )
+            logger.info("Dump file %s successfully loaded.", dump_file_location)
+
+    async def filter_alive_servers(self) -> None:
+        await self.prober.conn_prober.probe(self.servers)
+        self.servers = {
+            server
+            for server in self.servers
+            if server.response_time.connection < settings.DONT_ALIVE_CONNECTION_TIME
+        }
+
+    async def get_http_response_times(
+        self,
+    ) -> None:
+        await self.prober.http_prober.probe(self.servers)
 
     def fastest_connention_time_servers(
         self,

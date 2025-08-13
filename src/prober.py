@@ -1,15 +1,16 @@
 import asyncio
-import contextlib
 import logging
 import time
-from collections.abc import Generator, Iterable, Sequence
-from typing import Any, cast
+from collections.abc import Coroutine, Generator, Iterable, Sequence
+from typing import TYPE_CHECKING, Any
 
 import httpx
-from src.server import Server
-from src.xray.controller import XrayPoolManager
+from curl_cffi.requests import AsyncSession
+from src.config import settings
+from src.xray.handlers import XrayPoolHandler
 
-DONT_ALIVE_CONNECTION_TIME = 999.0
+if TYPE_CHECKING:
+    from src.server import Server
 
 logger = logging.getLogger(__name__)
 
@@ -18,25 +19,35 @@ class ConnectionProber:
     def __init__(
         self,
         timeout: int = 3,
-        max_concurrent: int = 50,
+        max_concurrent: int = 100,
     ) -> None:
         self.timeout = timeout
         self._semaphore = asyncio.Semaphore(max_concurrent)
 
-    async def probe(self, servers: Iterable[Server]) -> None:
-        server_tasks = [
-            self._get_connection_time(
+    async def probe(self, servers: Iterable["Server"]) -> None:
+        tasks = [self._safe_connection_measure(server) for server in servers]
+        await asyncio.gather(*tasks)
+
+    async def _safe_connection_measure(self, server: "Server") -> None:
+        try:
+            conn_time = await self._get_connection_time(server.address, server.port)
+            if conn_time is None:
+                msg = "Connection returned None"
+                raise TimeoutError(msg)
+            server.response_time.connection = conn_time
+            logger.debug(
+                "Server %s:%d connection OK: %.3fs",
                 server.address,
                 server.port,
+                conn_time,
             )
-            for server in servers
-        ]
-        connection_times = await asyncio.gather(*server_tasks)
-
-        for server, conn_time in zip(servers, connection_times):
-            server.response_time.connection = cast(
-                "float",
-                conn_time or DONT_ALIVE_CONNECTION_TIME,
+        except Exception as e:
+            server.response_time.connection = settings.DONT_ALIVE_CONNECTION_TIME
+            logger.debug(
+                "Connection to %s:%d failed: %s",
+                server.address,
+                server.port,
+                e,
             )
 
     async def _get_connection_time(
@@ -45,61 +56,52 @@ class ConnectionProber:
         port: int,
     ) -> float | None:
         async with self._semaphore:
-            start_time = time.time()
-            with contextlib.suppress(asyncio.TimeoutError, OSError):
+            start_time = time.perf_counter()
+            try:
                 _, writer = await asyncio.wait_for(
-                    asyncio.open_connection(
-                        address,
-                        port,
-                    ),
+                    asyncio.open_connection(address, port),
                     timeout=self.timeout,
                 )
                 writer.close()
                 await writer.wait_closed()
-                return round(time.time() - start_time, 3)
+                return round(time.perf_counter() - start_time, 3)
+            except (asyncio.TimeoutError, OSError) as e:
+                logger.debug("Connection to %s:%d error: %s", address, port, e)
+                return None
 
 
-class HttpProber:
-    RESPONSE_204_URLS = (
-        "https://www.google.com/generate_204",
-        "https://www.cloudflare.com/cdn-cgi/trace",
-        "https://httpbin.org/status/204",
-    )
-
+class LegacyHttpxProber:
     def __init__(
         self,
-        timeout: int = 10,
-        concurent_connections: int = 50,
+        timeout: int = settings.HTTP_PROBER_TIMEOUT,
+        concurent_connections: int = settings.HTTP_PROBER_MAX_CONCURRENT_REQUESTS,
+        urls: Sequence[str] = settings.HTTP_204_URLS,
     ):
         self.timeout = timeout
+        self.urls = urls
         self._semaphore = asyncio.Semaphore(concurent_connections)
 
-    def setup_pool(
-        self,
-        api_url: str = "127.0.0.1:8080",
-        start_port: int = 60000,
-        pool_size: int = 50,
-    ) -> None:
-        self.pool_manager = XrayPoolManager(api_url, start_port, pool_size)
+        self.pool_manager = XrayPoolHandler(
+            api_url=settings.XRAY_API_URL,
+            start_port=settings.XRAY_START_INBOUND_PORT,
+            pool_size=settings.XRAY_POOL_SIZE,
+        )
 
     async def probe(
         self,
         servers: Iterable["Server"],
-        urls: Sequence[str],
     ) -> None:
-        logger.debug(
-            "Checking servers %s for URLs %s",
-            [s.address for s in servers],
-            urls,
-        )
-        await asyncio.gather(
-            *(
-                self._check_server(server, proxy_number, urls)
-                for proxy_number, server in enumerate(servers)
-            ),
-        )
+        for servers_chunk in self._chunk_servers(servers, settings.XRAY_POOL_SIZE):
+            with self.pool_manager.outbound_pool(servers_chunk):
+                await asyncio.gather(
+                    *(
+                        self._check_server(server, proxy_number)
+                        for proxy_number, server in enumerate(servers_chunk)
+                    ),
+                    return_exceptions=True,
+                )
 
-    def _chunk_servers_iter(
+    def _chunk_servers(
         self,
         servers: Iterable["Server"],
         chunk_size: int,
@@ -119,53 +121,246 @@ class HttpProber:
         client: httpx.AsyncClient,
         url: str,
     ) -> float:
-        start_time = time.time()
-        try:
-            response = await client.get(url, timeout=self.timeout)
-            logger.debug(
-                "URL: %s, Status: %s, Client ID: %s",
-                url,
-                response.status_code,
-                id(client),
-            )
-            _ = response.text
-            return time.time() - start_time
-        except Exception as e:
-            logger.error("Error fetching URL %s: %s", url, e)
-            return 999.0
+        async with self._semaphore:
+            start_time = time.perf_counter()
+            try:
+                response = await client.get(url, timeout=self.timeout)
+                logger.debug("STATUS CODE %s", response.status_code)
+                if response.status_code < 400:
+                    return round(time.perf_counter() - start_time, 3)
+                logger.warning(
+                    "Bad status code %d for %s",
+                    response.status_code,
+                    url,
+                )
+                return 555.0
+            except Exception as e:
+                logger.warning("Error fetching %s: %s", url, e)
+                return 666.0
 
     async def _check_server(
         self,
         server: "Server",
         proxy_number: int,
-        urls: Sequence[str],
     ) -> None:
         async with httpx.AsyncClient(
-            proxy=f"socks5://127.0.0.1:{self.pool_manager.start_port + proxy_number}",
+            proxy=f"http://xray:xray@127.0.0.1:{settings.XRAY_START_INBOUND_PORT + proxy_number}",  # noqa: E501
         ) as client:
-            logger.debug(
-                "Using proxy on port %d for server %s",
-                self.pool_manager.start_port + proxy_number,
-                server.address,
-            )
             results = await asyncio.gather(
-                *[self._get_url_response_time(client, url) for url in urls],
+                *[self._get_url_response_time(client, url) for url in self.urls],
+                return_exceptions=True,
             )
-            server.response_time.http.update(dict(zip(urls, results)))
 
-    async def _check_servers(
+            response_times = {}
+            for url, result in zip(self.urls, results):
+                if isinstance(result, Exception):
+                    logger.warning(
+                        "Exception while probing %s via server %s: %s",
+                        url,
+                        server.address,
+                        result,
+                    )
+                    response_times[url] = 999.0
+                else:
+                    response_times[url] = result
+
+            server.response_time.http.update(response_times)
+
+
+class CurlCffiProber:
+    def __init__(
+        self,
+        timeout: int = settings.HTTP_PROBER_TIMEOUT,
+        concurent_connections: int = settings.HTTP_PROBER_MAX_CONCURRENT_REQUESTS,
+        urls: Sequence[str] = settings.HTTP_204_URLS,
+    ) -> None:
+        self.timeout = timeout
+        self.urls = urls
+        self._semaphore = asyncio.Semaphore(concurent_connections)
+        self.pool_manager = XrayPoolHandler(
+            api_url=settings.XRAY_API_URL,
+            start_port=settings.XRAY_START_INBOUND_PORT,
+            pool_size=settings.XRAY_POOL_SIZE,
+        )
+
+    async def probe(self, servers: Iterable["Server"]) -> None:
+        for servers_chunk in self._chunk_servers(servers, settings.XRAY_POOL_SIZE):
+            async with (
+                self._semaphore,
+                AsyncSession() as session,
+            ):
+                with self.pool_manager.outbound_pool(servers_chunk):
+                    tasks = self._create_tasks(session, servers_chunk)
+                    await asyncio.gather(*tasks, return_exceptions=True)
+
+                logger.debug("Chunk check completed")
+
+    def _create_tasks(
+        self,
+        session: AsyncSession,
+        servers: Iterable["Server"],
+    ) -> list[Coroutine]:
+        tasks = []
+        for num, server in enumerate(servers):
+            # proxy_url = f"socks5://127.0.0.1:{settings.XRAY_START_INBOUND_PORT + num}"
+            proxy_url = (
+                f"http://xray:xray@127.0.0.1:{settings.XRAY_START_INBOUND_PORT + num}"
+            )
+            logger.debug(
+                "Using proxy %s for server %s, [%s]",
+                proxy_url,
+                server.address,
+                num,
+            )
+            tasks.extend(
+                [self._fetch(session, server, proxy_url, url) for url in self.urls],
+            )
+        return tasks
+
+    async def _fetch(
+        self,
+        session: AsyncSession,
+        server: "Server",
+        proxy: str,
+        url: str,
+    ) -> None:
+        try:
+            start_time = time.time()
+            resp = await session.get(
+                url,
+                proxy=proxy,
+                timeout=settings.HTTP_PROBER_TIMEOUT,
+            )
+            elapsed_ms = time.time() - start_time
+            server.response_time.http[url] = elapsed_ms
+            logger.debug(
+                "%s → %s | %s | %s",
+                proxy,
+                url,
+                resp.status_code,
+                elapsed_ms,
+            )
+        except Exception as e:  # noqa: BLE001
+            server.response_time.http[url] = 998.0
+            logger.debug("%s → %s | error: %s", proxy, url, e)
+
+    def _chunk_servers(
         self,
         servers: Iterable["Server"],
-        urls: Sequence[str],
+        chunk_size: int,
+    ) -> Generator[list["Server"], Any, None]:
+        logger.debug("Chunking servers into chunks of size %d.", chunk_size)
+        chunk = []
+        for server in servers:
+            chunk.append(server)
+            if len(chunk) == chunk_size:
+                yield chunk
+                chunk = []
+        if chunk:
+            yield chunk
+
+
+class HttpxProber:
+    def __init__(
+        self,
+        timeout: int = settings.HTTP_PROBER_TIMEOUT,
+        concurent_connections: int = settings.HTTP_PROBER_MAX_CONCURRENT_REQUESTS,
+        urls: Sequence[str] = settings.HTTP_204_URLS,
     ) -> None:
-        logger.debug(
-            "Checking servers %s for URLs %s",
-            [s.address for s in servers],
-            urls,
+        self.timeout = timeout
+        self.urls = urls
+        self._semaphore = asyncio.Semaphore(concurent_connections)
+        self.pool_manager = XrayPoolHandler(
+            api_url=settings.XRAY_API_URL,
+            start_port=settings.XRAY_START_INBOUND_PORT,
+            pool_size=settings.XRAY_POOL_SIZE,
         )
-        await asyncio.gather(
-            *(
-                self._check_server(server, proxy_number, urls)
-                for proxy_number, server in enumerate(servers)
-            ),
+        self.clients = self.generate_clients()
+
+    def generate_clients(self) -> list[httpx.AsyncClient]:
+        logger.debug("Generating %d clients.", settings.XRAY_POOL_SIZE)
+        return [
+            httpx.AsyncClient(
+                proxy=f"http://xray:xray@127.0.0.1:{settings.XRAY_START_INBOUND_PORT + n}",
+            )
+            for n in range(settings.XRAY_POOL_SIZE)
+        ]
+
+    async def remove_clients(self, clients: list[httpx.AsyncClient]) -> None:
+        await asyncio.gather(*[client.aclose() for client in clients])
+
+    async def probe(self, servers: Iterable["Server"]) -> None:
+        logger.debug("Starting http probe for servers.")
+        for servers_chunk in self._chunk_servers(servers, settings.XRAY_POOL_SIZE):
+            with self.pool_manager.outbound_pool(servers_chunk):
+                tasks = []
+                for num, server in enumerate(servers_chunk):
+                    tasks.extend([self._fetch(server, num, url) for url in self.urls])
+                await asyncio.gather(*tasks, return_exceptions=True)
+                logger.debug("Chunk check completed")
+
+    async def _fetch(
+        self,
+        server: "Server",
+        num: int,
+        url: str,
+    ) -> None:
+        start_time = time.time()
+        try:
+            resp = await self.clients[num].get(
+                url,
+                timeout=settings.HTTP_PROBER_TIMEOUT,
+            )
+            print("OKOKOK")
+            elapsed_ms = time.time() - start_time
+            server.response_time.http[url] = elapsed_ms
+            logger.debug(
+                "[%s] → %s | %s | %s",
+                num,
+                url,
+                resp.status_code,
+                elapsed_ms,
+            )
+        except Exception as e:  # noqa: BLE001
+            server.response_time.http[url] = 888.0
+            logger.debug("[%s] → %s | error: %s", num, url, e)
+
+    def _chunk_servers(
+        self,
+        servers: Iterable["Server"],
+        chunk_size: int,
+    ) -> Generator[list["Server"], Any, None]:
+        logger.debug("Chunking servers into chunks of size %d.", chunk_size)
+        chunk = []
+        for server in servers:
+            chunk.append(server)
+            if len(chunk) == chunk_size:
+                yield chunk
+                chunk = []
+        if chunk:
+            yield chunk
+
+
+class Prober:
+    def __init__(self) -> None:
+        self.conn_prober = ConnectionProber(
+            timeout=settings.SUBSCRIPTION_TIMEOUT,
+            max_concurrent=settings.SUBSCRIPTION_MAX_CONCURRENT_CONNECTIONS,
         )
+        self.http_prober = HttpxProber(
+            timeout=settings.HTTP_PROBER_TIMEOUT,
+            concurent_connections=settings.HTTP_PROBER_MAX_CONCURRENT_REQUESTS,
+        )
+
+    async def probe_connection(self, servers: Iterable["Server"]) -> None:
+        logger.info("Starting connection for servers.")
+        await self.conn_prober.probe(servers)
+        logger.info("Connection probe complete.")
+
+    async def probe_http_requests(
+        self,
+        servers: Iterable["Server"],
+    ) -> None:
+        logger.info("Starting http probe for servers.")
+        await self.http_prober.probe(servers)
+        logger.info("Connection http probe complete.")

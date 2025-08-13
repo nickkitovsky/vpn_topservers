@@ -126,7 +126,7 @@ class SubscriptionManager:
         try:
             response_text = base64.b64decode(raw_response).decode("utf-8")
             logger.debug("Content was base64 encoded.")
-        except (binascii.Error, UnicodeDecodeError):
+        except (binascii.Error, UnicodeDecodeError, ValueError):
             logger.debug("Content is not base64 encoded, treating as plain text.")
             response_text = raw_response
         servers = self._filter_suppoerted_protocols(response_text.splitlines())
