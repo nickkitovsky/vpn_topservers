@@ -15,65 +15,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class ConnectionProber:
-    def __init__(
-        self,
-        timeout: int = 3,
-        max_concurrent: int = 100,
-    ) -> None:
-        self.timeout = timeout
-        self._semaphore = asyncio.Semaphore(max_concurrent)
-
-    async def probe(self, servers: Iterable["Server"]) -> None:
-        tasks = [self._safe_connection_measure(server) for server in servers]
-        await asyncio.gather(*tasks)
-
-    async def _safe_connection_measure(self, server: "Server") -> None:
-        try:
-            conn_time = await self._get_connection_time(server.address, server.port)
-            if conn_time is None:
-                msg = "Connection returned None"
-                raise TimeoutError(msg)
-            server.response_time.connection = conn_time
-            logger.debug(
-                "Server %s:%d connection OK: %.3fs",
-                server.address,
-                server.port,
-                conn_time,
-            )
-        except Exception as e:
-            server.response_time.connection = settings.DONT_ALIVE_CONNECTION_TIME
-            logger.debug(
-                "Connection to %s:%d failed: %s",
-                server.address,
-                server.port,
-                e,
-            )
-
-    async def _get_connection_time(
-        self,
-        address: str,
-        port: int,
-    ) -> float | None:
-        async with self._semaphore:
-            start_time = time.perf_counter()
-            try:
-                _, writer = await asyncio.wait_for(
-                    asyncio.open_connection(address, port),
-                    timeout=self.timeout,
-                )
-                writer.close()
-                await writer.wait_closed()
-                return round(time.perf_counter() - start_time, 3)
-            except (asyncio.TimeoutError, OSError) as e:
-                logger.debug("Connection to %s:%d error: %s", address, port, e)
-                return None
-
-
 class LegacyHttpxProber:
     def __init__(
         self,
-        timeout: int = settings.HTTP_PROBER_TIMEOUT,
+        timeout: int = settings.PROXYPROBER_TIMEOUT,
         concurent_connections: int = settings.HTTP_PROBER_MAX_CONCURRENT_REQUESTS,
         urls: Sequence[str] = settings.HTTP_204_URLS,
     ):
@@ -170,7 +115,7 @@ class LegacyHttpxProber:
 class CurlCffiProber:
     def __init__(
         self,
-        timeout: int = settings.HTTP_PROBER_TIMEOUT,
+        timeout: int = settings.PROXYPROBER_TIMEOUT,
         concurent_connections: int = settings.HTTP_PROBER_MAX_CONCURRENT_REQUESTS,
         urls: Sequence[str] = settings.HTTP_204_URLS,
     ) -> None:
@@ -229,7 +174,7 @@ class CurlCffiProber:
             resp = await session.get(
                 url,
                 proxy=proxy,
-                timeout=settings.HTTP_PROBER_TIMEOUT,
+                timeout=settings.PROXYPROBER_TIMEOUT,
             )
             elapsed_ms = time.time() - start_time
             server.response_time.http[url] = elapsed_ms
@@ -263,7 +208,7 @@ class CurlCffiProber:
 class HttpxProber:
     def __init__(
         self,
-        timeout: int = settings.HTTP_PROBER_TIMEOUT,
+        timeout: int = settings.PROXYPROBER_TIMEOUT,
         concurent_connections: int = settings.HTTP_PROBER_MAX_CONCURRENT_REQUESTS,
         urls: Sequence[str] = settings.HTTP_204_URLS,
     ) -> None:
@@ -281,7 +226,7 @@ class HttpxProber:
         logger.debug("Generating %d clients.", settings.XRAY_POOL_SIZE)
         return [
             httpx.AsyncClient(
-                proxy=f"http://xray:xray@127.0.0.1:{settings.XRAY_START_INBOUND_PORT + n}",
+                proxy=f"http://127.0.0.1:{settings.XRAY_START_INBOUND_PORT + n}",
             )
             for n in range(settings.XRAY_POOL_SIZE)
         ]
@@ -309,7 +254,7 @@ class HttpxProber:
         try:
             resp = await self.clients[num].get(
                 url,
-                timeout=settings.HTTP_PROBER_TIMEOUT,
+                timeout=settings.PROXYPROBER_TIMEOUT,
             )
             print("OKOKOK")
             elapsed_ms = time.time() - start_time
@@ -347,8 +292,8 @@ class Prober:
             timeout=settings.SUBSCRIPTION_TIMEOUT,
             max_concurrent=settings.SUBSCRIPTION_MAX_CONCURRENT_CONNECTIONS,
         )
-        self.http_prober = HttpxProber(
-            timeout=settings.HTTP_PROBER_TIMEOUT,
+        self.http_prober = CurlCffiProber(
+            timeout=settings.PROXYPROBER_TIMEOUT,
             concurent_connections=settings.HTTP_PROBER_MAX_CONCURRENT_REQUESTS,
         )
 

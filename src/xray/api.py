@@ -50,9 +50,12 @@ logger = logging.getLogger(__name__)
 
 class XrayApi:
     def __init__(self, api_url: str = "127.0.0.1:8080") -> None:
-        channel: Channel = insecure_channel(api_url)
+        self.api_url = api_url
+        self.init_stubs()
+
+    def init_stubs(self) -> None:
+        channel: Channel = insecure_channel(self.api_url)
         self._handler_stub = HandlerServiceStub(channel)
-        self._remove_handler_stub = HandlerServiceStub(channel)
         self._route_stub: RoutingServiceStub = RoutingServiceStub(channel)
 
     def add_outbound(self, server: "Server", tag: str = "outbound") -> None:
@@ -110,9 +113,7 @@ class XrayApi:
                     ),
                     proxy_settings=self._to_typed_message(
                         HttpServerConfig(
-                            # accounts={
-                            #     "xray": "xray",
-                            # },
+                            accounts={},
                         ),
                     ),
                 ),
@@ -143,7 +144,7 @@ class XrayApi:
         logger.info("Added rule %s", rt)
 
     def remove_outbound(self, tag: str) -> None:
-        self._remove_handler_stub.RemoveOutbound(RemoveOutboundRequest(tag=tag))
+        self._handler_stub.RemoveOutbound(RemoveOutboundRequest(tag=tag))
         logger.info("Removed outbound %s", tag)
 
     def remove_routing_rule(self, rule_tag: str) -> None:
@@ -263,7 +264,6 @@ class XrayApi:
 
         return StreamConfig(
             protocol_name="tcp",
-            # protocol_name=params.type,
             transport_settings=ts,
             security_type=str(stype),
             security_settings=sconf,

@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     CONNECTION_PROBER_MAX_CONCURRENT_CONNECTIONS: int = 100
 
     # HTTP Prober settings
-    HTTP_PROBER_TIMEOUT: int = 15
+    PROXYPROBER_TIMEOUT: int = 10
     HTTP_PROBER_MAX_CONCURRENT_REQUESTS: int = 100
     HTTP_204_URLS: tuple[str, str, str] = (
         "https://www.google.com/generate_204",
