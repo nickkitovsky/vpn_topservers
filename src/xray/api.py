@@ -13,6 +13,8 @@ sys.path.append(str(pathlib.Path(__file__).parent.resolve()))
 if TYPE_CHECKING:
     from src.server import Server, VlessParams
 
+from src.config import settings
+
 from .grpc_api.app.proxyman.command.command_pb2 import (
     AddInboundRequest,
     AddOutboundRequest,
@@ -49,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 
 class XrayApi:
-    def __init__(self, api_url: str = "127.0.0.1:8080") -> None:
+    def __init__(self, api_url: str = settings.XRAY_API_URL) -> None:
         self.api_url = api_url
         self.init_stubs()
 

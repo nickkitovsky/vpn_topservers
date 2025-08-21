@@ -129,11 +129,11 @@ class SubscriptionManager:
         except (binascii.Error, UnicodeDecodeError, ValueError):
             logger.debug("Content is not base64 encoded, treating as plain text.")
             response_text = raw_response
-        servers = self._filter_suppoerted_protocols(response_text.splitlines())
+        servers = self._filter_supported_protocols(response_text.splitlines())
         logger.debug("Parsed %d supported server URLs.", len(servers))
         return servers
 
-    def _filter_suppoerted_protocols(self, server_urls: list[str]) -> set[str]:
+    def _filter_supported_protocols(self, server_urls: list[str]) -> set[str]:
         logger.debug(
             "Filtering %d URLs against supported protocols: %s",
             len(server_urls),
