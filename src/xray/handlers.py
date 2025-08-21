@@ -1,7 +1,6 @@
 import contextlib
 import logging
 import pathlib
-import time
 from collections.abc import Generator, Iterable
 from typing import TYPE_CHECKING, Any
 
@@ -79,30 +78,26 @@ class XrayProcessHandler:
 class XrayPoolHandler:
     def __init__(
         self,
-        api_url: str = "127.0.0.1:8080",
-        start_port: int = 60000,
-        pool_size: int = 50,
+        api_url: str = settings.XRAY_API_URL,
+        start_port: int = settings.XRAY_START_INBOUND_PORT,
+        pool_size: int = settings.XRAY_POOL_SIZE,
     ) -> None:
         self.api = XrayApi(api_url)
         self.start_port = start_port
         self.pool_size = pool_size
-        self._proc_handler = XrayProcessHandler()
+        self.process_manager = XrayProcessHandler()
 
     def add_inbound_pool(self) -> None:
-        for i in range(settings.XRAY_POOL_SIZE):
-            self.api.add_inbound_http(
-                settings.XRAY_START_INBOUND_PORT + i,
+        for i in range(self.pool_size):
+            self.api.add_inbound_socks(
+                self.start_port + i,
                 f"inbound{i}",
             )
-            # self.api.add_inbound_socks(
-            #     settings.XRAY_START_INBOUND_PORT + i,
-            #     f"inbound{i}",
-            # )
             self.api.add_routing_rule(f"inbound{i}", f"outbound{i}", f"rule{i}")
         logger.info(
             "Inbound servers pool created (%d servers). first port:%d",
-            settings.XRAY_POOL_SIZE,
-            settings.XRAY_START_INBOUND_PORT,
+            self.pool_size,
+            self.start_port,
         )
 
     @contextlib.contextmanager
@@ -110,14 +105,15 @@ class XrayPoolHandler:
         self,
         servers: Iterable["Server"],
     ) -> Generator[None, Any, None]:
-        if self._proc_handler.is_running():
-            logger.debug("Xray is already running. Restarting...")
-            self._proc_handler.restart()
+        if self.process_manager.is_running():
+            self.api.init_stubs()
         else:
-            logger.debug("Xray starting...")
-            self._proc_handler.run()
-        self.add_inbound_pool()
+            logger.debug("Xray not running. Starting...")
+            self.process_manager.run()
+            self.api.init_stubs()
+            self.add_inbound_pool()
         logger.debug("Add inbound pool")
+        outbound_tags = []
         for num, server in enumerate(servers):
             logger.debug(
                 "Adding outbound %s for server %s",
@@ -127,6 +123,7 @@ class XrayPoolHandler:
             # TODO: FIX ANY API ERROR
             try:
                 self.api.add_outbound(server, f"outbound{num}")
+                outbound_tags.append(f"outbound{num}")
             except Exception:
                 logger.exception(
                     "Error adding outbound %s for server %s",
@@ -134,7 +131,6 @@ class XrayPoolHandler:
                     server.address,
                 )
         yield
-        logger.debug("Stopping xray...")
-        self._proc_handler.stop()
-        logger.debug("SLEEPING 3s...")
-        time.sleep(3)
+        for outbound_tag in outbound_tags:
+            logger.debug("Removing outbound %s", outbound_tag)
+            self.api.remove_outbound(outbound_tag)

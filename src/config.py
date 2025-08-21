@@ -26,10 +26,10 @@ class Settings(BaseSettings):
     # HTTP Prober settings
     PROXYPROBER_TIMEOUT: int = 10
     HTTP_PROBER_MAX_CONCURRENT_REQUESTS: int = 100
-    HTTP_204_URLS: tuple[str, str, str] = (
+    HTTP_204_URLS: tuple[str, ...] = (
         "https://www.google.com/generate_204",
         "https://www.cloudflare.com/cdn-cgi/trace",
-        "https://httpbin.org/status/204",
+        # "https://httpbin.org/status/204",
     )
     DONT_ALIVE_CONNECTION_TIME: float = 999.0
 

@@ -1,8 +1,6 @@
-import asyncio
 import json
 import logging
 import pathlib
-import time
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
 from itertools import islice
@@ -11,7 +9,7 @@ from urllib.parse import parse_qs, urlparse
 
 from src.config import settings
 from src.models import Server, VlessParams
-from src.prober import Prober
+from src.prober import ConnectionProber, HttpProber
 
 if TYPE_CHECKING:
     from src.models import Subscription
@@ -83,9 +81,10 @@ class ServerParser:
 
 class ServerManager:
     def __init__(self):
-        self.servers = set()
+        self.servers: set[Server] = set()
         self.parser = ServerParser()
-        self.prober = Prober()
+        self.connection_prober = ConnectionProber()
+        self.http_prober = HttpProber()
         logger.debug("ServerManager initialized.")
 
     def add_from_subscription(
@@ -153,18 +152,22 @@ class ServerManager:
                     )
             logger.info("Dump file %s successfully loaded.", dump_file_location)
 
-    async def filter_alive_servers(self) -> None:
-        await self.prober.conn_prober.probe(self.servers)
+    async def filter_alive_connection_servers(self) -> None:
+        await self.connection_prober.probe(self.servers)
         self.servers = {
             server
             for server in self.servers
             if server.response_time.connection < settings.DONT_ALIVE_CONNECTION_TIME
         }
 
-    async def get_http_response_times(
-        self,
-    ) -> None:
-        await self.prober.http_prober.probe(self.servers)
+    async def filter_alive_http_servers(self) -> None:
+        await self.http_prober.probe(self.servers)
+        self.servers = {
+            server
+            for server in self.servers
+            if sum(server.response_time.http.values())
+            < settings.DONT_ALIVE_CONNECTION_TIME
+        }
 
     def fastest_connention_time_servers(
         self,
@@ -194,52 +197,3 @@ class ServerManager:
         if server_amount == 0:
             return iter(sorted_servers)
         return islice(sorted_servers, server_amount)
-
-
-class ConnectionProber:
-    def __init__(
-        self,
-        timeout: int = 5,
-        max_concurrent: int = 100,
-    ) -> None:
-        self.timeout = timeout
-        self._semaphore = asyncio.Semaphore(max_concurrent)
-
-    async def probe(self, servers: Iterable["Server"]) -> None:
-        tasks = [self._safe_connection_measure(server) for server in servers]
-        await asyncio.gather(*tasks)
-
-    async def _safe_connection_measure(self, server: "Server") -> None:
-        try:
-            conn_time = await self._get_connection_time(server.address, server.port)
-        except (asyncio.TimeoutError, OSError) as e:
-            server.response_time.connection = settings.DONT_ALIVE_CONNECTION_TIME
-            logger.debug(
-                "Server %s:%d connection FAILED: %s",
-                server.address,
-                server.port,
-                e,
-            )
-        else:
-            server.response_time.connection = conn_time
-            logger.debug(
-                "Server %s:%d connection OK: %.3fs",
-                server.address,
-                server.port,
-                conn_time,
-            )
-
-    async def _get_connection_time(
-        self,
-        address: str,
-        port: int,
-    ) -> float:
-        async with self._semaphore:
-            start_time = time.perf_counter()
-            _, writer = await asyncio.wait_for(
-                asyncio.open_connection(address, port),
-                timeout=self.timeout,
-            )
-            writer.close()
-            await writer.wait_closed()
-            return round(time.perf_counter() - start_time, 3)
