@@ -1,3 +1,0 @@
-https://raw.githubusercontent.com/NiREvil/vless/refs/heads/main/sub/freedom
-https://raw.githubusercontent.com/rango-cfs/NewCollector/refs/heads/main/v2ray_links.txt
-https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt
