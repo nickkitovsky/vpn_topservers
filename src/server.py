@@ -1,9 +1,10 @@
 import json
 import logging
-import pathlib
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
+from datetime import datetime
 from itertools import islice
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 from urllib.parse import parse_qs, urlparse
 
@@ -122,36 +123,6 @@ class ServerManager:
         for subscription in subscriptions:
             self.add_from_subscription(subscription)
 
-    def write_servers_dump(self, dump_file_location: str | pathlib.Path) -> None:
-        dump_data = defaultdict(list)
-        if isinstance(dump_file_location, str):
-            dump_file_location = pathlib.Path(dump_file_location)
-        for server in self.servers:
-            dump_data[server.from_subscription].append(server.raw_url)
-        try:
-            with dump_file_location.open("w") as dump_file:
-                json.dump(dump_data, dump_file)
-        except OSError:
-            logger.exception("Error of write dump file: %s")
-        else:
-            logger.info("Dump file %s successfully created.", dump_file_location)
-
-    def read_servers_dump(self, dump_file_location: str | pathlib.Path) -> None:
-        if isinstance(dump_file_location, str):
-            dump_file_location = pathlib.Path(dump_file_location)
-        try:
-            with dump_file_location.open("r") as dump_file:
-                dump_data = json.load(dump_file)
-        except OSError:
-            logger.exception("Error of read dump file: %s")
-        else:
-            for subscription_url, server_urls in dump_data.items():
-                for server_url in server_urls:
-                    self.servers.add(
-                        self.parser.parse_url(server_url, subscription_url),
-                    )
-            logger.info("Dump file %s successfully loaded.", dump_file_location)
-
     async def filter_alive_connection_servers(self) -> None:
         await self.connection_prober.probe(self.servers)
         self.servers = {
@@ -197,3 +168,49 @@ class ServerManager:
         if server_amount == 0:
             return iter(sorted_servers)
         return islice(sorted_servers, server_amount)
+
+
+class ServerDumpManager:
+    def _generate_filename(self) -> Path:
+        now = datetime.now()  # noqa: DTZ005
+        seconds_of_day = now.hour * 3600 + now.minute * 60 + now.second
+        return Path(f"{now.day}.{now.month}.{now.year}_{seconds_of_day}.json")
+
+    def write_servers_dump(
+        self,
+        servers: set[Server],
+        dump_filename: str | Path | None = None,
+    ) -> None:
+        if dump_filename is None:
+            dump_filename = self._generate_filename()
+        elif isinstance(dump_filename, str):
+            dump_filename = Path(dump_filename)
+        dump_data = defaultdict(list)
+        for server in servers:
+            dump_data[server.from_subscription].append(server.raw_url)
+        try:
+            with (settings.DUMPS_DIR / dump_filename).open("w") as dump_file:
+                json.dump(dump_data, dump_file)
+        except OSError:
+            logger.exception("Error of write dump file: %s", str(dump_filename))
+        else:
+            logger.info("Dump file %s successfully created.", str(dump_filename))
+
+    def read_servers_dump(
+        self,
+        dump_filename: str | Path,
+        servers: set[Server],
+    ) -> None:
+        try:
+            with Path(dump_filename).open("r") as dump_file:
+                dump_data = json.load(dump_file)
+        except OSError:
+            logger.exception("Error of read dump file: %s", dump_filename)
+        else:
+            parser = ServerParser()
+            for subscription_url, server_urls in dump_data.items():
+                for server_url in server_urls:
+                    servers.add(
+                        parser.parse_url(server_url, subscription_url),
+                    )
+            logger.info("Dump file %s successfully loaded.", dump_file)
