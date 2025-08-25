@@ -3,7 +3,7 @@ import logging
 import pathlib
 
 from src.logger_config import setup_logging
-from src.server import ServerManager
+from src.server import ServerDumpManager, ServerManager
 from src.subscription import SubscriptionManager
 
 setup_logging(debug=True)
@@ -24,7 +24,8 @@ async def main() -> None:
     server_manager.add_from_subscriptions(subscription.subscriptions)
     await server_manager.filter_alive_connection_servers()
     await server_manager.filter_alive_http_servers()
-    server_manager.write_servers_dump("dump.json")
+    dumper = ServerDumpManager()
+    dumper.write_servers_dump(server_manager.servers)
 
 
 if __name__ == "__main__":
