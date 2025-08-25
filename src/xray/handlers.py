@@ -2,6 +2,7 @@ import contextlib
 import logging
 import pathlib
 from collections.abc import Generator, Iterable
+from time import sleep
 from typing import TYPE_CHECKING, Any
 
 import psutil
@@ -21,7 +22,7 @@ class XrayProcessHandler:
 
     def run(self) -> None:
         if self.is_running():
-            logger.info("Xray is already running.")
+            logger.debug("Xray is already running.")
             return
 
         self.process = psutil.Popen(
@@ -36,10 +37,10 @@ class XrayProcessHandler:
         elif proc := self._find_xray_proc():
             self._terminate_process(proc)
         else:
-            logger.info("Xray is not running.")
+            logger.debug("Xray is not running.")
 
     def restart(self) -> None:
-        logger.info("Restarting xray.exe...")
+        logger.debug("Restarting xray.exe...")
         self.stop()
         self.run()
 
@@ -50,7 +51,7 @@ class XrayProcessHandler:
         for proc in psutil.process_iter(["pid", "name"]):
             if proc.info["name"] == "xray.exe":
                 proc.terminate()
-                logger.info("Stopped xray.exe with PID: %s", proc.pid)
+                logger.debug("Stopped xray.exe with PID: %s", proc.pid)
 
     def _terminate_process(self, process: psutil.Process) -> None:
         logger.info("Stopping xray.exe with PID: %s", process.pid)
@@ -94,7 +95,7 @@ class XrayPoolHandler:
                 f"inbound{i}",
             )
             self.api.add_routing_rule(f"inbound{i}", f"outbound{i}", f"rule{i}")
-        logger.info(
+        logger.debug(
             "Inbound servers pool created (%d servers). first port:%d",
             self.pool_size,
             self.start_port,
@@ -124,13 +125,15 @@ class XrayPoolHandler:
             try:
                 self.api.add_outbound(server, f"outbound{num}")
                 outbound_tags.append(f"outbound{num}")
-            except Exception:
-                logger.exception(
-                    "Error adding outbound %s for server %s",
-                    num,
-                    server.address,
+            except Exception as e:
+                logger.warning(
+                    "Error adding outbound %s | error: %s",
+                    server.raw_url,
+                    e,
                 )
         yield
+        # TODO: Add except error and restart xray
+        logger.debug("Wait 0.5 sec before removing outbound")
+        sleep(0.5)
         for outbound_tag in outbound_tags:
-            logger.debug("Removing outbound %s", outbound_tag)
             self.api.remove_outbound(outbound_tag)

@@ -87,7 +87,7 @@ class XrayApi:
         )
 
         self._handler_stub.AddInbound(AddInboundRequest(inbound=inbound))
-        logger.info("Added inbound %s", tag)
+        logger.debug("Added inbound %s", tag)
 
     def add_inbound_http(self, port: int, tag: str = "inbound") -> None:
         self._handler_stub.AddInbound(
@@ -143,11 +143,11 @@ class XrayApi:
         self._route_stub.AddRule(
             AddRuleRequest(shouldAppend=True, config=self._to_typed_message(cfg)),
         )
-        logger.info("Added rule %s", rt)
+        logger.debug("Added rule %s", rt)
 
     def remove_outbound(self, tag: str) -> None:
         self._handler_stub.RemoveOutbound(RemoveOutboundRequest(tag=tag))
-        logger.info("Removed outbound %s", tag)
+        logger.debug("Removed outbound %s", tag)
 
     def remove_routing_rule(self, rule_tag: str) -> None:
         self._route_stub.RemoveRule(
@@ -192,7 +192,7 @@ class XrayApi:
             ),
         )
         self._handler_stub.AddOutbound(AddOutboundRequest(outbound=outbound))
-        logger.info("Added vless outbound %s", tag)
+        logger.debug("Added vless outbound %s", tag)
 
     def _parse_address(self, address: str) -> IPOrDomain:
         try:
