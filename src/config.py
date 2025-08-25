@@ -8,7 +8,9 @@ class Settings(BaseSettings):
     APP_NAME: str = "VPN Top Servers"
     DEBUG: bool = True
     PREFFER_PORTS: set = {443}
-
+    # Dir settings
+    FILES_DIR: Path = Path(__file__).resolve().parent.parent / "files"
+    DUMPS_DIR: Path = FILES_DIR / Path("dumps")
     # Xray settings
     XRAY_API_URL: str = "127.0.0.1:8080"
     XRAY_START_INBOUND_PORT: int = 60000
