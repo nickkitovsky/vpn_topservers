@@ -1,4 +1,3 @@
-import base64
 import logging
 import pathlib
 import sys
@@ -11,8 +10,9 @@ from grpc import Channel, insecure_channel
 # Add the 'grpc_api' directory to Python path to resolve protobuf imports
 sys.path.append(str(pathlib.Path(__file__).parent.resolve()))
 if TYPE_CHECKING:
-    from src.server import Server, VlessParams
+    from server.server import Server, VlessParams
 
+from src.common import decode_base64url
 from src.config import settings
 
 from .grpc_api.app.proxyman.command.command_pb2 import (
@@ -253,7 +253,7 @@ class XrayApi:
                 self._to_typed_message(
                     RealityConfig(
                         server_name=params.sni,
-                        public_key=self._decode_base64url(params.pbk),
+                        public_key=decode_base64url(params.pbk),
                         short_id=sb,
                         Fingerprint=params.fp,
                         show=False,
@@ -270,10 +270,6 @@ class XrayApi:
             security_type=str(stype),
             security_settings=sconf,
         )
-
-    def _decode_base64url(self, s: str) -> bytes:
-        pad = "=" * (-len(s) % 4)
-        return base64.urlsafe_b64decode(s + pad)
 
     def _to_typed_message(self, message: Any) -> "TypedMessage":  # noqa: ANN401
         return TypedMessage(

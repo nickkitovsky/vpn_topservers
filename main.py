@@ -2,8 +2,8 @@ import asyncio
 import logging
 import pathlib
 
+from server.server import ServerDumpManager, ServerManager
 from src.logger_config import setup_logging
-from src.server import ServerDumpManager, ServerManager
 from src.subscription import SubscriptionManager
 
 setup_logging(debug=True)

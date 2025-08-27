@@ -5,12 +5,13 @@ from collections.abc import Iterable, Iterator
 from datetime import datetime
 from itertools import islice
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
-from urllib.parse import parse_qs, urlparse
+from typing import TYPE_CHECKING
 
 from src.config import settings
-from src.models import Server, VlessParams
 from src.prober import ConnectionProber, HttpProber
+from src.server.exceptions import ServerError
+from src.server.parser import parse_url
+from src.server.schema import Server
 
 if TYPE_CHECKING:
     from src.models import Subscription
@@ -18,72 +19,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class ServerParser:
-    def __init__(self) -> None:
-        self.supported_protocols: dict[str, Callable[[str], VlessParams]] = {
-            "vless": self.parse_vless_params,
-        }
-
-    @classmethod
-    def get_supported_protocols(cls) -> set[str]:
-        return set(cls().supported_protocols.keys())
-
-    def parse_url(self, url: str, subscription_url: str = "") -> Server:
-        logger.debug("Parsing server URL: %s", url)
-        parsed = urlparse(url)
-        if not (parsed.scheme and parsed.hostname and parsed.port):
-            msg = f"Error parsing link: {url}"
-            logger.error(msg)
-            raise ValueError(msg)
-
-        try:
-            params = self.supported_protocols[parsed.scheme](parsed.query)
-        except KeyError:
-            msg = f"Unsupported protocol in link: {url}"
-            logger.error(msg)  # noqa: TRY400
-            raise ValueError(msg)  # noqa: B904
-        else:
-            connection_data = {
-                "protocol": parsed.scheme,
-                "address": str(parsed.hostname),
-                "port": parsed.port,
-                "username": parsed.username or "",
-                "params": params,
-            }
-            server = Server(
-                **connection_data,
-                raw_url=url,
-                from_subscription=subscription_url,
-            )
-            logger.debug("Successfully parsed server: %s", server)
-            return server
-
-    def parse_vless_params(self, raw_params: str) -> VlessParams:
-        logger.debug("Parsing VLESS params from: %s", raw_params)
-        query = parse_qs(raw_params)
-
-        def get_param(key: str) -> str:
-            return query.get(key, [""])[0]
-
-        return VlessParams(
-            sni=get_param("sni"),
-            pbk=get_param("pbk"),
-            security=get_param("security") or "none",
-            type=get_param("type") or "tcp",
-            fp=get_param("fp"),
-            path=get_param("path") or "/",
-            service_name=get_param("serviceName"),
-            host=get_param("host"),
-            alpn=query.get("alpn"),
-            sid=get_param("sid"),
-            flow=get_param("flow"),
-        )
-
-
 class ServerManager:
     def __init__(self):
         self.servers: set[Server] = set()
-        self.parser = ServerParser()
         self.connection_prober = ConnectionProber()
         self.http_prober = HttpProber()
         logger.debug("ServerManager initialized.")
@@ -102,8 +40,8 @@ class ServerManager:
         initial_server_count = len(self.servers)
         for server_url in subscription.servers:
             try:
-                server = self.parser.parse_url(server_url, subscription.url)
-            except ValueError:  # noqa: PERF203
+                server = parse_url(server_url, subscription.url)
+            except ServerError:  # noqa: PERF203
                 continue
             else:
                 if (only_443_port and server.port != 443) or (  # noqa: PLR2004
@@ -207,10 +145,9 @@ class ServerDumpManager:
         except OSError:
             logger.exception("Error of read dump file: %s", dump_filename)
         else:
-            parser = ServerParser()
             for subscription_url, server_urls in dump_data.items():
                 for server_url in server_urls:
                     servers.add(
-                        parser.parse_url(server_url, subscription_url),
+                        parse_url(server_url, subscription_url),
                     )
             logger.info("Dump file %s successfully loaded.", dump_file)

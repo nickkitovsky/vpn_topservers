@@ -10,7 +10,7 @@ from src.config import settings
 from src.xray.api import XrayApi
 
 if TYPE_CHECKING:
-    from src.server import Server
+    from server.server import Server
 
 logger = logging.getLogger(__name__)
 

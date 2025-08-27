@@ -9,7 +9,7 @@ from src.config import settings
 from src.xray.handlers import XrayPoolHandler
 
 if TYPE_CHECKING:
-    from src.server import Server
+    from server.server import Server
 
 logger = logging.getLogger(__name__)
 
