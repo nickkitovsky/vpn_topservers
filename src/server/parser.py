@@ -4,13 +4,14 @@ from urllib.parse import ParseResult, urlparse
 
 from src.server import exceptions as exc
 from src.server.exceptions import UrlParseError
-from src.server.protocols import vless
+from src.server.protocols import vless, vmess
 from src.server.schema import Server
 
 logger = logging.getLogger(__name__)
 
 PROTOCOLS: dict[str, Callable[[ParseResult, str], Server]] = {
     "vless": vless.parse_url,
+    "vmess": vmess.parse_url,
 }
 
 
