@@ -5,8 +5,8 @@ import logging
 from pathlib import Path
 
 import httpx
+from server.server import ServerParser
 from src.models import Subscription
-from src.server import ServerParser
 
 logger = logging.getLogger(__name__)
 
