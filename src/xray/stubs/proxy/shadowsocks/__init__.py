@@ -1,1 +1,0 @@
-# shadowsocks package\n
