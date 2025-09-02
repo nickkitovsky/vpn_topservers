@@ -9,12 +9,13 @@ from src.xray.grpc_api.proxy.socks.config_pb2 import (
     AuthType,
     ServerConfig as SocksServerConfig,
 )
+from xray.helpers import to_typed_message
 
 
 def add_socks(port: int, tag: str = "inbound") -> InboundHandlerConfig:
     return InboundHandlerConfig(
         tag=tag,
-        receiver_settings=Messaages.to_typed_message(
+        receiver_settings=to_typed_message(
             ReceiverConfig(
                 port_list=PortList(range=[PortRange(From=port, To=port)]),
                 listen=IPOrDomain(ip=bytes([127, 0, 0, 1])),
@@ -24,7 +25,7 @@ def add_socks(port: int, tag: str = "inbound") -> InboundHandlerConfig:
                 ),
             ),
         ),
-        proxy_settings=Messaages.to_typed_message(
+        proxy_settings=to_typed_message(
             SocksServerConfig(
                 auth_type=AuthType.NO_AUTH,  # type: ignore reportArgumentType
                 address=IPOrDomain(ip=bytes([0, 0, 0, 0])),
