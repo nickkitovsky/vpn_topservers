@@ -6,19 +6,25 @@ from src.xray.grpc_api.app.proxyman.config_pb2 import (
 from src.xray.grpc_api.common.net.address_pb2 import IPOrDomain
 from src.xray.grpc_api.common.net.port_pb2 import PortList, PortRange
 from src.xray.grpc_api.core.config_pb2 import InboundHandlerConfig
-from src.xray.grpc_api.proxy.socks.config_pb2 import (
-    AuthType,
-    ServerConfig as SocksServerConfig,
-)
+from src.xray.grpc_api.proxy.http.config_pb2 import ServerConfig as HttpServerConfig
 
 
-def add_socks(port: int, tag: str = "inbound") -> InboundHandlerConfig:
+def add_http(port: int, tag: str = "inbound") -> InboundHandlerConfig:
     return InboundHandlerConfig(
         tag=tag,
         receiver_settings=Messaages.to_typed_message(
             ReceiverConfig(
-                port_list=PortList(range=[PortRange(From=port, To=port)]),
-                listen=IPOrDomain(ip=bytes([127, 0, 0, 1])),
+                port_list=PortList(
+                    range=[
+                        PortRange(
+                            From=port,
+                            To=port,
+                        ),
+                    ],
+                ),
+                listen=IPOrDomain(
+                    ip=bytes([127, 0, 0, 1]),
+                ),
                 sniffing_settings=SniffingConfig(
                     enabled=True,
                     destination_override=["http", "tls"],
@@ -26,10 +32,8 @@ def add_socks(port: int, tag: str = "inbound") -> InboundHandlerConfig:
             ),
         ),
         proxy_settings=Messaages.to_typed_message(
-            SocksServerConfig(
-                auth_type=AuthType.NO_AUTH,  # type: ignore reportArgumentType
-                address=IPOrDomain(ip=bytes([0, 0, 0, 0])),
-                udp_enabled=True,
+            HttpServerConfig(
+                accounts={},
             ),
         ),
     )
