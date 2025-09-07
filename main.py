@@ -2,7 +2,7 @@ import asyncio
 import logging
 import pathlib
 
-from server.server import ServerDumpManager, ServerManager
+from server.server import ServerDumper, ServerManager
 from src.logger_config import setup_logging
 from src.subscription import SubscriptionManager
 
@@ -24,7 +24,7 @@ async def main() -> None:
     server_manager.add_from_subscriptions(subscription.subscriptions)
     await server_manager.filter_alive_connection_servers()
     await server_manager.filter_alive_http_servers()
-    dumper = ServerDumpManager()
+    dumper = ServerDumper()
     dumper.write_servers_dump(server_manager.servers)
 
 
