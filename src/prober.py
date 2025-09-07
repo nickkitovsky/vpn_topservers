@@ -102,7 +102,7 @@ class HttpProber:
     async def _close_session(self) -> None:
         await self.session.close()
 
-    async def probe(self, servers: Iterable["Server"]) -> None:
+    async def probe(self, servers: Sequence["Server"]) -> None:
         for servers_chunk in self._chunk_servers(servers, settings.XRAY_POOL_SIZE):
             # async with self._semaphore:
             with self.pool_manager.outbound_pool(servers_chunk):
