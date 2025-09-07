@@ -17,7 +17,7 @@ class Server:
     protocol: str
     address: str
     port: int
-    username: str
+    username: str = field(repr=False)
     params: ServerParams = field(repr=False)
     raw_url: str = field(repr=False)
     response_time: Responses = field(default_factory=Responses, init=False)
