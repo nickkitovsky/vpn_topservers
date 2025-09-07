@@ -1,2 +1,2 @@
-from src.xray.outbound.vless import add_vless
-from src.xray.outbound.vmess import add_vmess
+from xray.outbound.vless import add_vless
+from xray.outbound.vmess import add_vmess

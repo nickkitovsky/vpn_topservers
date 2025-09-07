@@ -5,25 +5,25 @@ if TYPE_CHECKING:
 
 
 from src.server.protocols.vmess import VmessParams
-from src.xray.grpc_api.app.proxyman.config_pb2 import (
+from src.xray.stubs.app.proxyman.config_pb2 import (
     MultiplexingConfig,
     SenderConfig,
 )
-from src.xray.grpc_api.common.protocol.headers_pb2 import AUTO, SecurityConfig
-from src.xray.grpc_api.common.protocol.server_spec_pb2 import ServerEndpoint
-from src.xray.grpc_api.common.protocol.user_pb2 import User
-from src.xray.grpc_api.core.config_pb2 import OutboundHandlerConfig
-from src.xray.grpc_api.proxy.vmess.account_pb2 import Account as VmessAccount
-from src.xray.grpc_api.proxy.vmess.outbound.config_pb2 import (
+from src.xray.stubs.common.protocol.headers_pb2 import AUTO, SecurityConfig
+from src.xray.stubs.common.protocol.server_spec_pb2 import ServerEndpoint
+from src.xray.stubs.common.protocol.user_pb2 import User
+from src.xray.stubs.core.config_pb2 import OutboundHandlerConfig
+from src.xray.stubs.proxy.vmess.account_pb2 import Account as VmessAccount
+from src.xray.stubs.proxy.vmess.outbound.config_pb2 import (
     Config as VmessOutboundConfig,
 )
-from src.xray.grpc_api.transport.internet.config_pb2 import (
+from src.xray.stubs.transport.internet.config_pb2 import (
     StreamConfig,
     TransportConfig,
 )
-from src.xray.grpc_api.transport.internet.grpc.config_pb2 import Config as GrpcConfig
-from src.xray.grpc_api.transport.internet.tls.config_pb2 import Config as TlsConfig
-from src.xray.grpc_api.transport.internet.websocket.config_pb2 import (
+from src.xray.stubs.transport.internet.grpc.config_pb2 import Config as GrpcConfig
+from src.xray.stubs.transport.internet.tls.config_pb2 import Config as TlsConfig
+from src.xray.stubs.transport.internet.websocket.config_pb2 import (
     Config as WebsocketConfig,
 )
 from xray.helpers import get_message_type, parse_address, to_typed_message

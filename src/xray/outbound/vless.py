@@ -8,30 +8,30 @@ if TYPE_CHECKING:
 
 from src.common_utils import decode_base64
 from src.server.protocols.vless import VlessParams
-from src.xray.grpc_api.app.proxyman.config_pb2 import (
+from src.xray.helpers import get_message_type, parse_address, to_typed_message
+from src.xray.stubs.app.proxyman.config_pb2 import (
     MultiplexingConfig,
     SenderConfig,
 )
-from src.xray.grpc_api.common.protocol.server_spec_pb2 import ServerEndpoint
-from src.xray.grpc_api.common.protocol.user_pb2 import User
-from src.xray.grpc_api.core.config_pb2 import OutboundHandlerConfig
-from src.xray.grpc_api.proxy.vless.account_pb2 import Account as VlessAccount
-from src.xray.grpc_api.proxy.vless.outbound.config_pb2 import (
+from src.xray.stubs.common.protocol.server_spec_pb2 import ServerEndpoint
+from src.xray.stubs.common.protocol.user_pb2 import User
+from src.xray.stubs.core.config_pb2 import OutboundHandlerConfig
+from src.xray.stubs.proxy.vless.account_pb2 import Account as VlessAccount
+from src.xray.stubs.proxy.vless.outbound.config_pb2 import (
     Config as VlessOutboundConfig,
 )
-from src.xray.grpc_api.transport.internet.config_pb2 import (
+from src.xray.stubs.transport.internet.config_pb2 import (
     StreamConfig,
     TransportConfig,
 )
-from src.xray.grpc_api.transport.internet.grpc.config_pb2 import Config as GrpcConfig
-from src.xray.grpc_api.transport.internet.reality.config_pb2 import (
+from src.xray.stubs.transport.internet.grpc.config_pb2 import Config as GrpcConfig
+from src.xray.stubs.transport.internet.reality.config_pb2 import (
     Config as RealityConfig,
 )
-from src.xray.grpc_api.transport.internet.tls.config_pb2 import Config as TlsConfig
-from src.xray.grpc_api.transport.internet.websocket.config_pb2 import (
+from src.xray.stubs.transport.internet.tls.config_pb2 import Config as TlsConfig
+from src.xray.stubs.transport.internet.websocket.config_pb2 import (
     Config as WebsocketConfig,
 )
-from src.xray.helpers import get_message_type, parse_address, to_typed_message
 
 
 def add_vless(
