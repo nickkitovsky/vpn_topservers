@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 class XrayApi:
     def __init__(self, api_url: str = settings.XRAY_API_URL) -> None:
         self.api_url = api_url
-        self.init_handler_stubs()
+        self.create_handler_stubs()
 
-    def init_handler_stubs(self) -> None:
+    def create_handler_stubs(self) -> None:
         channel: Channel = insecure_channel(self.api_url)
         self._handler_stub = HandlerServiceStub(channel=channel)
         self._route_stub: RoutingServiceStub = RoutingServiceStub(channel=channel)

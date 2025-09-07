@@ -112,11 +112,11 @@ class XrayPoolHandler:
         servers: Iterable["Server"],
     ) -> Generator[None, Any, None]:
         if self.process_manager.is_running():
-            self.api.init_handler_stubs()
+            self.api.create_handler_stubs()
         else:
             logger.debug("Xray not running. Starting...")
             self.process_manager.run()
-            self.api.init_handler_stubs()
+            self.api.create_handler_stubs()
             self.add_inbound_pool()
         logger.debug("Add inbound pool")
         outbound_tags = []
