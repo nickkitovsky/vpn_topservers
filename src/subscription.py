@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 
 import httpx
-from server.server import ServerParser
+from server.parser import PROTOCOLS
 from src.models import Subscription
 
 logger = logging.getLogger(__name__)
@@ -14,10 +14,10 @@ logger = logging.getLogger(__name__)
 class SubscriptionManager:
     def __init__(self) -> None:
         self.subscriptions = set()
-        self.supported_protocols = ServerParser.get_supported_protocols()
+        self.support_protocols = set(PROTOCOLS.keys())
         logger.debug(
             "SubscriptionManager initialized with supported protocols: %s",
-            self.supported_protocols,
+            self.support_protocols,
         )
 
     def add_subscription(self, subscription_url: str) -> None:
@@ -137,12 +137,12 @@ class SubscriptionManager:
         logger.debug(
             "Filtering %d URLs against supported protocols: %s",
             len(server_urls),
-            self.supported_protocols,
+            self.support_protocols,
         )
         servers = {
             server
             for server in server_urls
-            if server.split(":", 1)[0] in self.supported_protocols
+            if server.split(":", 1)[0] in self.support_protocols
         }
         unsupported_count = len(server_urls) - len(servers)
         if unsupported_count > 0:

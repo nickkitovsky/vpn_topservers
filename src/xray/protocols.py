@@ -3,12 +3,14 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from src.xray import inbound, outbound
+from xray import inbound, outbound
 
 if TYPE_CHECKING:
     from server.schema import Server
-    from src.xray.grpc_api.core.config_pb2 import InboundHandlerConfig
-    from xray.grpc_api.core.config_pb2 import OutboundHandlerConfig
+    from xray.stubs.core.config_pb2 import (
+        InboundHandlerConfig,
+        OutboundHandlerConfig,
+    )
 
 
 @dataclass

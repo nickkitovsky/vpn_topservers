@@ -1,8 +1,8 @@
 from ipaddress import ip_address
 from typing import Any
 
-from .grpc_api.common.net.address_pb2 import IPOrDomain
-from .grpc_api.common.serial.typed_message_pb2 import TypedMessage
+from xray.stubs.common.net.address_pb2 import IPOrDomain
+from xray.stubs.common.serial.typed_message_pb2 import TypedMessage
 
 
 def to_typed_message(message: Any) -> "TypedMessage":  # noqa: ANN401

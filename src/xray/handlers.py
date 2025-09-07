@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 import psutil
 from src.config import settings
 from src.xray.api import XrayApi
+from xray.protocols import InboundProtocol
 
 if TYPE_CHECKING:
     from server.server import Server
@@ -88,9 +89,13 @@ class XrayPoolHandler:
         self.pool_size = pool_size
         self.process_manager = XrayProcessHandler()
 
-    def add_inbound_pool(self) -> None:
+    def add_inbound_pool(
+        self,
+        protocol: InboundProtocol = InboundProtocol.socks,
+    ) -> None:
         for i in range(self.pool_size):
-            self.api.add_inbound_socks(
+            self.api.add_inbound(
+                protocol,
                 self.start_port + i,
                 f"inbound{i}",
             )
@@ -107,11 +112,11 @@ class XrayPoolHandler:
         servers: Iterable["Server"],
     ) -> Generator[None, Any, None]:
         if self.process_manager.is_running():
-            self.api.init_stubs()
+            self.api.init_handler_stubs()
         else:
             logger.debug("Xray not running. Starting...")
             self.process_manager.run()
-            self.api.init_stubs()
+            self.api.init_handler_stubs()
             self.add_inbound_pool()
         logger.debug("Add inbound pool")
         outbound_tags = []

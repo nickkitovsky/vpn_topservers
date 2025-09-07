@@ -1,30 +1,32 @@
 import logging
-import pathlib
-import sys
 from typing import TYPE_CHECKING
 
 from grpc import Channel, insecure_channel
+from src.xray.helpers import to_typed_message
 from src.xray.protocols import InboundProtocol, OutboundProtocol
-from xray.helpers import to_typed_message
 
-# Add the 'grpc_api' directory to Python path to resolve protobuf imports
-sys.path.append(str(pathlib.Path(__file__).parent.resolve()))
+# # Add the 'grpc_api' directory to Python path to resolve protobuf imports
+# sys.path.append(str(pathlib.Path(__file__).parent.resolve()))
 if TYPE_CHECKING:
     from src.server.server import Server
 
 
 from src.config import settings
-
-from .grpc_api.app.proxyman.command.command_pb2 import (
+from src.xray.stubs.app.proxyman.command.command_pb2 import (
     AddInboundRequest,
     AddOutboundRequest,
     RemoveOutboundRequest,
 )
-from .grpc_api.app.proxyman.command.command_pb2_grpc import HandlerServiceStub
-from .grpc_api.app.router.command.command_pb2 import AddRuleRequest, RemoveRuleRequest
-from .grpc_api.app.router.command.command_pb2_grpc import RoutingServiceStub
-from .grpc_api.app.router.config_pb2 import Config, RoutingRule
-from .grpc_api.common.net.network_pb2 import Network
+from src.xray.stubs.app.proxyman.command.command_pb2_grpc import (
+    HandlerServiceStub,
+)
+from src.xray.stubs.app.router.command.command_pb2 import (
+    AddRuleRequest,
+    RemoveRuleRequest,
+)
+from src.xray.stubs.app.router.command.command_pb2_grpc import RoutingServiceStub
+from src.xray.stubs.app.router.config_pb2 import Config, RoutingRule
+from src.xray.stubs.common.net.network_pb2 import Network
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +34,12 @@ logger = logging.getLogger(__name__)
 class XrayApi:
     def __init__(self, api_url: str = settings.XRAY_API_URL) -> None:
         self.api_url = api_url
-        self.init_stubs()
+        self.init_handler_stubs()
 
-    def init_stubs(self) -> None:
+    def init_handler_stubs(self) -> None:
         channel: Channel = insecure_channel(self.api_url)
-        self._handler_stub = HandlerServiceStub(channel)
-        self._route_stub: RoutingServiceStub = RoutingServiceStub(channel)
+        self._handler_stub = HandlerServiceStub(channel=channel)
+        self._route_stub: RoutingServiceStub = RoutingServiceStub(channel=channel)
 
     def add_outbound(self, server: "Server", tag: str = "outbound") -> None:
         try:
