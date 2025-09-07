@@ -6,8 +6,8 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "curl-cffi>=0.13.0",
-    "googleapis-common-protos>=1.70.0",
-    "grpcio-tools>=1.73.0",
+    "grpcio>=1.74.0",
+    "grpcio-tools>=1.74.0",
     "httpx[socks]>=0.28.1",
     "protobuf>=6.31.1",
     "psutil>=7.0.0",
@@ -18,3 +18,7 @@ dependencies = [
 dev = [
     "ipykernel>=6.29.5",
 ]
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
