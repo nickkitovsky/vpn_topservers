@@ -107,9 +107,41 @@ class ServerManager:
             return iter(sorted_servers)
         return islice(sorted_servers, server_amount)
 
+    def export_subscription(
+        self,
+        subscription_filename: str | Path | None = None,
+        num_of_servers: int = 0,
+    ) -> None:
+        exporter = ServerExporter()
+        exporter.write_subscription(
+            self.fastest_http_response_time_servers(num_of_servers),
+            subscription_filename,
+        )
 
-class ServerDumpManager:
-    def _generate_filename(self) -> Path:
+
+class ServerExporter:
+    def generate_subscription(self, servers: Iterable[Server]) -> str:
+        subscription_list = [
+            "#".join((server.raw_url.split("#")[0], f"server{num}"))
+            for num, server in enumerate(servers)
+        ]
+        return "\n".join(subscription_list)
+
+    def write_subscription(
+        self,
+        servers: Iterable[Server],
+        subscription_filename: str | Path | None = None,
+    ) -> None:
+        if subscription_filename is None:
+            subscription_filename = "subscription.txt"
+        if isinstance(subscription_filename, str):
+            subscription_filename = Path(subscription_filename)
+        subscription_filename.write_text(self.generate_subscription(servers))
+        logger.info("Subscription file %s successfully created.", subscription_filename)
+
+
+class ServerDumper:
+    def _generate_dump_filename(self) -> Path:
         now = datetime.now()  # noqa: DTZ005
         seconds_of_day = now.hour * 3600 + now.minute * 60 + now.second
         return Path(f"{now.day}.{now.month}.{now.year}_{seconds_of_day}.json")
@@ -120,7 +152,7 @@ class ServerDumpManager:
         dump_filename: str | Path | None = None,
     ) -> None:
         if dump_filename is None:
-            dump_filename = self._generate_filename()
+            dump_filename = self._generate_dump_filename()
         elif isinstance(dump_filename, str):
             dump_filename = Path(dump_filename)
         dump_data = defaultdict(list)
