@@ -27,11 +27,16 @@ class Settings(BaseSettings):
 
     # HTTP Prober settings
     PROXYPROBER_TIMEOUT: int = 10
-    HTTP_PROBER_MAX_CONCURRENT_REQUESTS: int = 100
+    HTTP_PROBER_MAX_CONCURRENT_REQUESTS: int = 150
     HTTP_204_URLS: tuple[str, ...] = (
         "https://www.google.com/generate_204",
         "https://www.cloudflare.com/cdn-cgi/trace",
         # "https://httpbin.org/status/204",
+    )
+    HTTP_REAL_SITES: tuple[str, ...] = (
+        "https://www.gstatic.com/images/branding/searchlogo/ico/favicon.ico",
+        "https://cdn.oaistatic.com/assets/favicon-eex17e9e.ico",
+        "https://www.instagram.com/data/manifest.json",
     )
     DONT_ALIVE_CONNECTION_TIME: float = 999.0
 
