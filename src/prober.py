@@ -68,7 +68,7 @@ class HttpProber:
         self,
         timeout: int = settings.PROXYPROBER_TIMEOUT,
         concurent_connections: int = settings.HTTP_PROBER_MAX_CONCURRENT_REQUESTS,
-        urls: Sequence[str] = settings.HTTP_204_URLS,
+        urls: Sequence[str] = settings.HTTP_REAL_SITES,
     ) -> None:
         self.timeout = timeout
         self.urls = urls
@@ -104,7 +104,6 @@ class HttpProber:
 
     async def probe(self, servers: Iterable["Server"]) -> None:
         for servers_chunk in self._chunk_servers(servers, settings.XRAY_POOL_SIZE):
-            # async with self._semaphore:
             with self.pool_manager.outbound_pool(servers_chunk):
                 tasks = self._create_tasks(servers_chunk)
                 await asyncio.gather(*tasks, return_exceptions=True)
@@ -119,7 +118,7 @@ class HttpProber:
     ) -> list[Coroutine]:
         tasks = []
         for num, server in enumerate(servers):
-            proxy_url = f"socks5://127.0.0.1:{settings.XRAY_START_INBOUND_PORT + num}"
+            proxy_url = f"socks5h://127.0.0.1:{settings.XRAY_START_INBOUND_PORT + num}"
             logger.debug(
                 "Using proxy %s for server %s, [%s]",
                 proxy_url,
@@ -138,12 +137,14 @@ class HttpProber:
         url: str,
     ) -> None:
         try:
-            resp = await self.session.get(
-                url,
-                proxy=proxy,
-                timeout=settings.PROXYPROBER_TIMEOUT,
-            )
-
+            async with self._semaphore:
+                resp = await self.session.get(
+                    url,
+                    proxy=proxy,
+                    timeout=settings.PROXYPROBER_TIMEOUT,
+                )
+            if not (200 <= resp.status_code < 500):
+                raise ValueError(f"Bad status {resp.status_code}")
             server.response_time.http[url] = resp.elapsed
             logger.debug(
                 "%s → %s | %s | %s",

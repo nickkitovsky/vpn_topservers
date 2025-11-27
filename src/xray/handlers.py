@@ -1,13 +1,14 @@
 import contextlib
 import logging
 import pathlib
-from collections.abc import Generator, Iterable
+from collections.abc import Generator, Sequence
 from time import sleep
 from typing import TYPE_CHECKING, Any
 
 import psutil
 from src.config import settings
 from src.xray.api import XrayApi
+from xray.protocols import InboundProtocol
 
 if TYPE_CHECKING:
     from server.server import Server
@@ -88,9 +89,16 @@ class XrayPoolHandler:
         self.pool_size = pool_size
         self.process_manager = XrayProcessHandler()
 
-    def add_inbound_pool(self) -> None:
+    def add_inbound_pool(
+        self,
+        protocol: InboundProtocol = InboundProtocol.socks,
+        pool_size: int | None = None,
+    ) -> None:
+        if pool_size and pool_size < self.pool_size:
+            self.pool_size = pool_size
         for i in range(self.pool_size):
-            self.api.add_inbound_socks(
+            self.api.add_inbound(
+                protocol,
                 self.start_port + i,
                 f"inbound{i}",
             )
@@ -104,15 +112,15 @@ class XrayPoolHandler:
     @contextlib.contextmanager
     def outbound_pool(
         self,
-        servers: Iterable["Server"],
+        servers: Sequence["Server"],
     ) -> Generator[None, Any, None]:
         if self.process_manager.is_running():
-            self.api.init_stubs()
+            self.api.create_handler_stubs()
         else:
             logger.debug("Xray not running. Starting...")
             self.process_manager.run()
-            self.api.init_stubs()
-            self.add_inbound_pool()
+            self.api.create_handler_stubs()
+            self.add_inbound_pool(pool_size=len(servers))
         logger.debug("Add inbound pool")
         outbound_tags = []
         for num, server in enumerate(servers):

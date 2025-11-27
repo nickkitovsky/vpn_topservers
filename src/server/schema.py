@@ -17,7 +17,7 @@ class Server:
     protocol: str
     address: str
     port: int
-    username: str
+    username: str = field(repr=False)
     params: ServerParams = field(repr=False)
     raw_url: str = field(repr=False)
     response_time: Responses = field(default_factory=Responses, init=False)
@@ -28,7 +28,8 @@ class Server:
             (
                 self.address,
                 self.port,
-                self.username,
+                # TODO: Add unique username as options (disable by default)
+                # self.username,
             ),
         )
 
@@ -36,6 +37,7 @@ class Server:
         return bool(
             isinstance(other, Server)
             and self.address == other.address
-            and self.port == other.port
-            and self.username == other.username,
+            and self.port == other.port,
+            # TODO: Add unique username as options (disable by default)
+            # and self.username == other.username,
         )
